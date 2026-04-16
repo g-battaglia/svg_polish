@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+  <!-- Length values in styles with unnecessary decimal precision.
+       svg_polish should reduce 2.500px -> 2.5px, 12.000px -> 12px, etc. -->
+  <rect x="10" y="10" width="80" height="80"
+        style="stroke-width:2.500px;stroke:#333;fill:none"/>
+  <text x="110" y="50" style="font-size:12.000px;fill:#333">Hello World</text>
+  <line x1="100" y1="90" x2="190" y2="90"
+        style="stroke:#000;stroke-dashoffset:2.500px;stroke-width:1.000px"/>
+</svg>

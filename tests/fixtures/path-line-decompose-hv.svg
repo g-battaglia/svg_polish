@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Paths with l commands containing mixed diagonal, horizontal, and vertical segments.
+       svg_polish should decompose l into h/v where possible. -->
+  <path d="M10,10 h10 l5,5,0,10" fill="none" stroke="navy" stroke-width="1.5"/>
+  <path d="M40,10 v10 l5,5,10,0" fill="none" stroke="maroon" stroke-width="1.5"/>
+  <path d="M70,10 h1 l5,5,10,0,20,0" fill="none" stroke="teal" stroke-width="1.5"/>
+</svg>

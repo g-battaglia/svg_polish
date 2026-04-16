@@ -7,7 +7,7 @@ SVG Polish removes unnecessary data from SVG files — editor metadata, redundan
 [![PyPI](https://img.shields.io/pypi/v/svg-polish.svg)](https://pypi.org/project/svg-polish/)
 [![Python](https://img.shields.io/pypi/pyversions/svg-polish.svg)](https://pypi.org/project/svg-polish/)
 [![Tests](https://img.shields.io/github/actions/workflow/status/g-battaglia/svg_polish/ci.yml?label=tests)](https://github.com/g-battaglia/svg_polish/actions)
-[![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen)](https://github.com/g-battaglia/svg_polish)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/g-battaglia/svg_polish)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 ---
@@ -189,7 +189,7 @@ svg_polish/
 │   ├── svg_regex.py         # SVG path data parser
 │   ├── svg_transform.py     # SVG transform parser
 │   └── py.typed             # PEP 561 type marker
-├── tests/                   # Test suite (283 tests, 94% coverage)
+├── tests/                   # Test suite (469 tests, 100% coverage)
 │   ├── test_optimizer.py    # Core optimizer tests
 │   ├── test_public_api.py   # Public API tests
 │   ├── test_css.py          # CSS parser tests

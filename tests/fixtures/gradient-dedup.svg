@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+  <!-- Duplicate gradients that svg_polish should deduplicate.
+       Both gradients have identical stops. -->
+  <defs>
+    <linearGradient id="gradA">
+      <stop offset="0" stop-color="#ff0000"/>
+      <stop offset="1" stop-color="#0000ff"/>
+    </linearGradient>
+    <linearGradient id="gradB">
+      <stop offset="0" stop-color="#ff0000"/>
+      <stop offset="1" stop-color="#0000ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="80" height="80" fill="url(#gradA)"/>
+  <rect x="110" y="10" width="80" height="80" fill="url(#gradB)"/>
+</svg>

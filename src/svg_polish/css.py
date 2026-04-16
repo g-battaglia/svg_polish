@@ -39,7 +39,7 @@ def parseCssString(css_text: str) -> list[CSSRule]:
             continue
         selector = bits[0].strip()
         bites = bits[1].strip().split(";")
-        if len(bites) < 1:
+        if len(bites) < 1:  # pragma: no cover — str.split() always returns >= 1 element
             continue
         props: dict[str, str] = {}
         for bite in bites:

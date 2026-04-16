@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+  <!-- Tests style inheritance: fill on parent <g> inherited by children.
+       svg_polish should recognize inherited properties and optimize accordingly. -->
+  <g style="fill:red">
+    <rect x="10" y="10" width="40" height="40"/>
+    <rect x="60" y="10" width="40" height="40"/>
+  </g>
+  <g style="opacity:0;fill:blue;stroke:green">
+    <rect x="110" y="10" width="30" height="30"/>
+    <circle cx="170" cy="30" r="15" fill="yellow"/>
+  </g>
+</svg>

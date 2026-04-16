@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+  <!-- IDs referenced via url() in style attributes.
+       svg_polish should shorten IDs and update all url() references. -->
+  <defs>
+    <linearGradient id="myLongGradientName">
+      <stop offset="0" stop-color="red"/>
+      <stop offset="1" stop-color="blue"/>
+    </linearGradient>
+    <clipPath id="myLongClipPathName">
+      <circle cx="100" cy="50" r="40"/>
+    </clipPath>
+  </defs>
+  <rect x="10" y="10" width="180" height="80"
+        style="fill:url(#myLongGradientName)"
+        clip-path="url(#myLongClipPathName)"/>
+</svg>

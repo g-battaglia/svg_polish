@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- A cubic bezier with two sets: first a real curve, then a collinear (straight) curve.
+       svg_polish should convert the straight segment to a line command. -->
+  <path d="M10,10 c5,10,15,20,20,25,0,0,0,0,0,10" fill="none" stroke="#333" stroke-width="2"/>
+</svg>

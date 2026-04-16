@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200px" height="100px">
+  <!-- SVG with explicit px dimensions and no viewBox.
+       With enable-viewboxing, svg_polish should create a viewBox
+       and remove width/height attributes. -->
+  <rect x="10" y="10" width="180" height="80" fill="#4a90d9" rx="5"/>
+  <text x="100" y="55" text-anchor="middle" fill="white" font-size="14">
+    svg_polish
+  </text>
+</svg>

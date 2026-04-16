@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+  <!-- Three sibling elements sharing fill="red", followed by whitespace
+       and then a different element. svg_polish can wrap the run into a
+       group and stop at the trailing element. -->
+  <g>
+    <rect fill="red" x="10" y="10" width="30" height="30"/>
+    <rect fill="red" x="50" y="10" width="30" height="30"/>
+    <rect fill="red" x="90" y="10" width="30" height="30"/>
+    <circle fill="blue" cx="160" cy="50" r="20"/>
+  </g>
+</svg>

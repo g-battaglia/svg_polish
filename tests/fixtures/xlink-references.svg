@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     viewBox="0 0 200 100">
+  <!-- SVG using xlink:href for gradient inheritance and <use> elements.
+       svg_polish should handle xlink namespace correctly. -->
+  <defs>
+    <linearGradient id="base" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff6b6b"/>
+      <stop offset="100%" stop-color="#4ecdc4"/>
+    </linearGradient>
+    <linearGradient id="derived" xlink:href="#base" x1="0%" y1="0%" x2="0%" y2="100%"/>
+    <circle id="dot" cx="0" cy="0" r="5"/>
+  </defs>
+  <rect x="10" y="10" width="180" height="40" fill="url(#base)"/>
+  <rect x="10" y="55" width="180" height="40" fill="url(#derived)"/>
+  <use xlink:href="#dot" x="50" y="50"/>
+  <use xlink:href="#dot" x="100" y="50"/>
+  <use xlink:href="#dot" x="150" y="50"/>
+</svg>
