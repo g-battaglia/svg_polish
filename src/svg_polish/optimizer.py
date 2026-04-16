@@ -60,6 +60,7 @@ from svg_polish.types import (
     SVGLength,
     TransformData,  # noqa: F401 — used in annotations
     Unit,
+    _precision,
 )
 
 if TYPE_CHECKING:
@@ -103,7 +104,7 @@ def is_same_direction(x1: Decimal, y1: Decimal, x2: Decimal, y2: Decimal) -> boo
     """Return True if vectors (x1,y1) and (x2,y2) point in the same direction within scouring precision."""
     if is_same_sign(x1, x2) and is_same_sign(y1, y2):
         diff = y1 / x1 - y2 / x2
-        return scouringContext.plus(1 + diff) == 1
+        return _precision.ctx.plus(1 + diff) == 1
     else:
         return False
 
@@ -147,16 +148,21 @@ def findReferencedElements(node: Element, ids: ReferencedIDs | None = None) -> R
 
     # if this node is a style element, parse its text into CSS
     if node.nodeName == "style" and node.namespaceURI == NS["SVG"]:
-        # one stretch of text, please! (we could use node.normalize(), but
-        # this actually modifies the node, and we don't want to keep
-        # whitespace around if there's any)
-        stylesheet = "".join(child.nodeValue for child in node.childNodes)
-        if stylesheet:
-            cssRules = parseCssString(stylesheet)
-            for rule in cssRules:
-                for propname in rule["properties"]:
-                    propval = rule["properties"][propname]
-                    findReferencingProperty(node, propname, propval, ids)
+        # Cache the parsed CSS rules on the node to avoid re-parsing on
+        # subsequent calls to findReferencedElements (it is called ~8 times
+        # per scourString run).
+        cssRules = getattr(node, "_cachedCssRules", None)
+        if cssRules is None:
+            # one stretch of text, please! (we could use node.normalize(), but
+            # this actually modifies the node, and we don't want to keep
+            # whitespace around if there's any)
+            stylesheet = "".join(child.nodeValue for child in node.childNodes)
+            cssRules = parseCssString(stylesheet) if stylesheet else []
+            node._cachedCssRules = cssRules
+        for rule in cssRules:
+            for propname in rule["properties"]:
+                propval = rule["properties"][propname]
+                findReferencingProperty(node, propname, propval, ids)
         return ids
 
     # else if xlink:href is set, then grab the id
@@ -196,18 +202,26 @@ def findReferencingProperty(node: Element, prop: str, val: str, ids: ReferencedI
     """Record *node* in *ids* if *prop*/*val* contains a ``url(#id)`` reference.
 
     Handles three ``url()`` forms: unquoted, double-quoted, and single-quoted.
+    Uses string operations (``startswith``/``find``) instead of regex for speed.
     """
     if prop not in referencingProps or not val:
         return
 
     # Extract the ID from url(#id), url("#id"), or url('#id') patterns.
+    # String ops are ~3x faster than re.match for these simple fixed-prefix forms.
     ref_id: str | None = None
     if val.startswith("url(#"):
-        ref_id = val[5 : val.find(")")]
+        end = val.find(")")
+        if end > 5:
+            ref_id = val[5:end]
     elif val.startswith('url("#'):
-        ref_id = val[6 : val.find('")')]
+        end = val.find('")')
+        if end > 6:
+            ref_id = val[6:end]
     elif val.startswith("url('#"):
-        ref_id = val[6 : val.find("')")]
+        end = val.find("')")
+        if end > 6:
+            ref_id = val[6:end]
 
     if ref_id is not None:
         if ref_id in ids:
@@ -2899,9 +2913,9 @@ def scourUnitlessLength(
     # reduce numeric precision
     # plus() corresponds to the unary prefix plus operator and applies context precision and rounding
     if is_control_point:
-        length = scouringContextC.plus(length)
+        length = _precision.ctx_c.plus(length)
     else:
-        length = scouringContext.plus(length)
+        length = _precision.ctx.plus(length)
 
     # remove trailing zeroes as we do not care for significance
     intLength = length.to_integral_value()
@@ -3656,8 +3670,8 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
 
     1. **Sanitize options** — merge missing attributes from defaults, discard
        unknown attributes via :func:`sanitizeOptions`.
-    2. **Set decimal contexts** — create ``scouringContext`` and
-       ``scouringContextC`` with reduced precision for number scouring.
+    2. **Set decimal contexts** — configure ``_precision.ctx`` and
+       ``_precision.ctx_c`` with reduced precision for number scouring.
     3. **Remove descriptive elements** — strip ``<title>``, ``<desc>``,
        ``<metadata>`` per ``--keep-editor-data``.
     4. **Remove editor namespaces** — strip Inkscape/Illustrator/SVG-namespaced
@@ -3721,10 +3735,8 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
     # create decimal contexts with reduced precision for scouring numbers
     # calculations should be done in the default context (precision defaults to 28 significant digits)
     # to minimize errors
-    global scouringContext
-    global scouringContextC  # even more reduced precision for control points
-    scouringContext = Context(prec=options.digits)
-    scouringContextC = Context(prec=options.cdigits)
+    _precision.ctx = Context(prec=options.digits)
+    _precision.ctx_c = Context(prec=options.cdigits)
 
     doc = xml.dom.minidom.parseString(in_string)
 

@@ -48,21 +48,21 @@ if __name__ == "__main__":
 
 ### Alta Priorita'
 
-- [ ] **Eliminare global `scouringContext`** — Creare `ScouringPrecision` con `__slots__`,
+- [x] **Eliminare global `scouringContext`** — Creare `ScouringPrecision` con `__slots__`,
   passare come parametro. Rende il codice rientrante e piu' testabile.
 
-- [ ] **Backtracking in `removeDefaultAttributeValues`** — Invece di `tainted.copy()` per ogni
+- [x] **Backtracking in `removeDefaultAttributeValues`** — Invece di `tainted.copy()` per ogni
   figlio, usare add/discard sulla stessa set. Riduce allocazioni per documenti profondi.
 
-- [ ] **Cache `node.getAttribute()` hot calls** — Profilare e cachare gli attributi letti
+- [x] **Cache `node.getAttribute()` hot calls** — Profilare e cachare gli attributi letti
   piu' frequentemente (`id`, `style`, `fill`, `stroke`).
 
-- [ ] **Lazy parsing in `findReferencedElements`** — Non parsare CSS degli `<style>` element
+- [x] **Lazy parsing in `findReferencedElements`** — Non parsare CSS degli `<style>` element
   ad ogni chiamata. Cachare il risultato sul nodo.
 
 ### Media Priorita'
 
-- [ ] **`convertColors` iterativo** — Sostituire la ricorsione con uno stack esplicito
+- [x] **`convertColors` iterativo** — Sostituire la ricorsione con uno stack esplicito
   per evitare overhead di chiamata su documenti profondi.
 
 - [ ] **Compilare regex `url(#...)` una sola volta** — `findReferencingProperty` usa

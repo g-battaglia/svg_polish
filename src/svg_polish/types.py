@@ -8,7 +8,7 @@ used throughout the optimizer.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Context, Decimal
 from typing import TYPE_CHECKING
 
 from svg_polish.constants import (
@@ -40,6 +40,42 @@ PathData = list[tuple[str, list[Decimal]]]
 
 # Parsed SVG transform data: list of (transform_type, [numeric arguments]).
 TransformData = list[tuple[str, list[Decimal]]]
+
+# =============================================================================
+# Scouring Precision Context
+# =============================================================================
+
+
+class ScouringPrecision:
+    """Holds the two ``decimal.Context`` objects used for number scouring.
+
+    SVG optimisation reduces the precision of numeric coordinates to save bytes.
+    Two contexts are needed:
+
+    * **ctx** — standard precision for most coordinates (``options.digits``).
+    * **ctx_c** — tighter precision for Bézier control points
+      (``options.cdigits``), which tolerate more rounding.
+
+    Storing both in a single object (instead of two module-level globals)
+    eliminates the ``global`` keyword, makes the precision reassignable
+    from a single point, and paves the way for future reentrancy.
+
+    Attributes:
+        ctx: ``Context`` for standard coordinate scouring.
+        ctx_c: ``Context`` for control-point scouring (usually fewer digits).
+    """
+
+    __slots__ = ("ctx", "ctx_c")
+
+    def __init__(self, digits: int = 5, cdigits: int = 5) -> None:
+        self.ctx: Context = Context(prec=digits)
+        self.ctx_c: Context = Context(prec=cdigits)
+
+
+# Module-level precision instance.  Set once per ``scourString`` call.
+# Access via ``_precision.ctx`` / ``_precision.ctx_c`` instead of raw globals.
+_precision = ScouringPrecision()
+
 
 # =============================================================================
 # SVG Length Units
