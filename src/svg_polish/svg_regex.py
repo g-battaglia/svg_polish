@@ -88,6 +88,7 @@ Original copyright:
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from decimal import Decimal, getcontext
 from functools import partial
 from typing import Any, Generator
@@ -97,12 +98,19 @@ class _EOF:
     """Sentinel for end of input."""
 
     def __repr__(self) -> str:
+        """Return ``"EOF"`` so error messages mention end-of-input clearly."""
         return "EOF"
 
 
 EOF = _EOF()
 
 Token = tuple[str | _EOF, str | None]
+
+# Each parser rule takes a "next token" thunk plus the current token and
+# returns the parsed command together with the token that follows it.
+NextTokenFn = Callable[[], Token]
+CommandTuple = tuple[str, list[Decimal]]
+RuleResult = tuple[CommandTuple, Token]
 
 # Lexer token definitions: each entry is (type_name, regex_pattern).
 # Order matters — "float" is listed before "int" so that e.g. "3.14"
@@ -125,6 +133,17 @@ class Lexer:
     """
 
     def __init__(self, lexicon: list[tuple[str, str]]) -> None:
+        """Compile *lexicon* into a single combined regex.
+
+        The lexicon order matters: the first matching alternative wins, so
+        broader patterns must come *after* their specialisations (e.g.
+        ``"float"`` before ``"int"`` so ``"3.14"`` lexes as one float, not
+        ``"3"`` followed by stray ``".14"``).
+
+        Args:
+            lexicon: Ordered list of ``(token_name, regex_pattern)`` pairs.
+                Each entry becomes a named group in the combined regex.
+        """
         self.lexicon = lexicon
         # Build a single combined regex with named groups: (?P<float>...)|(?P<int>...)|…
         parts = []
@@ -178,6 +197,16 @@ class SVGPathParser:
     """
 
     def __init__(self, lexer: Lexer = svg_lexer) -> None:
+        """Wire the parser to a *lexer* and build the command dispatch table.
+
+        Defaults to :data:`svg_lexer` (the module-level lexer pre-built from
+        the SVG path lexicon). Custom lexers are accepted mostly for testing
+        — the dispatch table assumes the standard SVG command alphabet.
+
+        Args:
+            lexer: Token producer. Must yield tokens matching the path
+                lexicon and a final ``(EOF, None)`` sentinel.
+        """
         self.lexer = lexer
 
         # Dispatch table: maps each command letter to the parsing rule that
@@ -227,50 +256,56 @@ class SVGPathParser:
         gen = self.lexer.lex(text)
         next_val_fn = partial(next, *(gen,))
         token = next_val_fn()
-        return self.rule_svg_path(next_val_fn, token)
+        result: list[tuple[str, list[Any]]] = self.rule_svg_path(next_val_fn, token)
+        return result
 
-    def rule_svg_path(self, next_val_fn, token):
+    def rule_svg_path(self, next_val_fn: NextTokenFn, token: Token) -> list[CommandTuple]:
         """Top-level rule: consume command groups until EOF."""
-        commands = []
+        commands: list[CommandTuple] = []
         while token[0] is not EOF:
             if token[0] != "command":
                 raise SyntaxError("expecting a command; got %r" % (token,))
+            assert token[1] is not None
             rule = self.command_dispatch[token[1]]
             command_group, token = rule(next_val_fn, token)
             commands.append(command_group)
         return commands
 
-    def rule_closepath(self, next_val_fn, token):
+    def rule_closepath(self, next_val_fn: NextTokenFn, token: Token) -> RuleResult:
         """Z / z: close the current subpath.  No numeric arguments."""
         command = token[1]
+        assert command is not None
         token = next_val_fn()
         return (command, []), token
 
-    def rule_moveto_or_lineto(self, next_val_fn, token):
+    def rule_moveto_or_lineto(self, next_val_fn: NextTokenFn, token: Token) -> RuleResult:
         """M / m / L / l: consume one or more ``(x, y)`` coordinate pairs."""
         command = token[1]
+        assert command is not None
         token = next_val_fn()
-        coordinates = []
+        coordinates: list[Decimal] = []
         while token[0] in self.number_tokens:
             pair, token = self.rule_coordinate_pair(next_val_fn, token)
             coordinates.extend(pair)
         return (command, coordinates), token
 
-    def rule_orthogonal_lineto(self, next_val_fn, token):
+    def rule_orthogonal_lineto(self, next_val_fn: NextTokenFn, token: Token) -> RuleResult:
         """H / h / V / v: consume one or more single coordinate values."""
         command = token[1]
+        assert command is not None
         token = next_val_fn()
-        coordinates = []
+        coordinates: list[Decimal] = []
         while token[0] in self.number_tokens:
             coord, token = self.rule_coordinate(next_val_fn, token)
             coordinates.append(coord)
         return (command, coordinates), token
 
-    def rule_curveto3(self, next_val_fn, token):
+    def rule_curveto3(self, next_val_fn: NextTokenFn, token: Token) -> RuleResult:
         """C / c: consume one or more cubic Bézier triplets (3 coordinate pairs each)."""
         command = token[1]
+        assert command is not None
         token = next_val_fn()
-        coordinates = []
+        coordinates: list[Decimal] = []
         while token[0] in self.number_tokens:
             pair1, token = self.rule_coordinate_pair(next_val_fn, token)
             pair2, token = self.rule_coordinate_pair(next_val_fn, token)
@@ -280,11 +315,12 @@ class SVGPathParser:
             coordinates.extend(pair3)
         return (command, coordinates), token
 
-    def rule_curveto2(self, next_val_fn, token):
+    def rule_curveto2(self, next_val_fn: NextTokenFn, token: Token) -> RuleResult:
         """S / s / Q / q: consume one or more smooth/quadratic pairs (2 coordinate pairs each)."""
         command = token[1]
+        assert command is not None
         token = next_val_fn()
-        coordinates = []
+        coordinates: list[Decimal] = []
         while token[0] in self.number_tokens:
             pair1, token = self.rule_coordinate_pair(next_val_fn, token)
             pair2, token = self.rule_coordinate_pair(next_val_fn, token)
@@ -292,17 +328,18 @@ class SVGPathParser:
             coordinates.extend(pair2)
         return (command, coordinates), token
 
-    def rule_curveto1(self, next_val_fn, token):
+    def rule_curveto1(self, next_val_fn: NextTokenFn, token: Token) -> RuleResult:
         """T / t: consume one or more smooth quadratic coordinate pairs."""
         command = token[1]
+        assert command is not None
         token = next_val_fn()
-        coordinates = []
+        coordinates: list[Decimal] = []
         while token[0] in self.number_tokens:
             pair1, token = self.rule_coordinate_pair(next_val_fn, token)
             coordinates.extend(pair1)
         return (command, coordinates), token
 
-    def rule_elliptical_arc(self, next_val_fn, token):
+    def rule_elliptical_arc(self, next_val_fn: NextTokenFn, token: Token) -> RuleResult:
         """A / a: consume one or more elliptical arc parameter groups.
 
         Each group consists of 7 values: ``(rx, ry, x-axis-rotation,
@@ -311,10 +348,12 @@ class SVGPathParser:
         :class:`SyntaxError`.  The flag values must be ``0`` or ``1``.
         """
         command = token[1]
+        assert command is not None
         token = next_val_fn()
-        arguments = []
+        arguments: list[Decimal] = []
         while token[0] in self.number_tokens:
             # rx — x-radius (must be >= 0)
+            assert token[1] is not None
             rx = Decimal(token[1]) * 1
             if rx < Decimal("0.0"):
                 raise SyntaxError("expecting a nonnegative number; got %r" % (token,))
@@ -323,6 +362,7 @@ class SVGPathParser:
             token = next_val_fn()
             if token[0] not in self.number_tokens:
                 raise SyntaxError("expecting a number; got %r" % (token,))
+            assert token[1] is not None
             ry = Decimal(token[1]) * 1
             if ry < Decimal("0.0"):
                 raise SyntaxError("expecting a nonnegative number; got %r" % (token,))
@@ -331,12 +371,14 @@ class SVGPathParser:
             token = next_val_fn()
             if token[0] not in self.number_tokens:
                 raise SyntaxError("expecting a number; got %r" % (token,))
+            assert token[1] is not None
             axis_rotation = Decimal(token[1]) * 1
 
             # large-arc-flag (0 or 1).
             # SVG allows flag values to be concatenated without whitespace/delimiter,
             # e.g. "01" means large_arc=0, sweep=1.  Handle that here.
             token = next_val_fn()
+            assert token[1] is not None
             if token[1][0] not in ("0", "1"):
                 raise SyntaxError("expecting a boolean flag; got %r" % (token,))
             large_arc_flag = Decimal(token[1][0]) * 1
@@ -344,30 +386,31 @@ class SVGPathParser:
             if len(token[1]) > 1:
                 # Multi-char token: consume only the first character as the flag,
                 # leave the rest for the next token.
-                token = list(token)
-                token[1] = token[1][1:]
+                token = (token[0], token[1][1:])
             else:
                 token = next_val_fn()
 
             # sweep-flag (0 or 1) — same concatenation logic as large-arc-flag.
+            assert token[1] is not None
             if token[1][0] not in ("0", "1"):
                 raise SyntaxError("expecting a boolean flag; got %r" % (token,))
             sweep_flag = Decimal(token[1][0]) * 1
 
             if len(token[1]) > 1:
-                token = list(token)
-                token[1] = token[1][1:]
+                token = (token[0], token[1][1:])
             else:
                 token = next_val_fn()
 
             # (x, y) — endpoint of the arc
             if token[0] not in self.number_tokens:
                 raise SyntaxError("expecting a number; got %r" % (token,))
+            assert token[1] is not None
             x = Decimal(token[1]) * 1
 
             token = next_val_fn()
             if token[0] not in self.number_tokens:
                 raise SyntaxError("expecting a number; got %r" % (token,))
+            assert token[1] is not None
             y = Decimal(token[1]) * 1
 
             token = next_val_fn()
@@ -375,23 +418,26 @@ class SVGPathParser:
 
         return (command, arguments), token
 
-    def rule_coordinate(self, next_val_fn, token):
+    def rule_coordinate(self, next_val_fn: NextTokenFn, token: Token) -> tuple[Decimal, Token]:
         """Consume a single numeric value from the token stream."""
         if token[0] not in self.number_tokens:
             raise SyntaxError("expecting a number; got %r" % (token,))
         # create_decimal() respects the current decimal context for precision.
+        assert token[1] is not None
         x = getcontext().create_decimal(token[1])
         token = next_val_fn()
         return x, token
 
-    def rule_coordinate_pair(self, next_val_fn, token):
+    def rule_coordinate_pair(self, next_val_fn: NextTokenFn, token: Token) -> tuple[list[Decimal], Token]:
         """Consume two consecutive numeric values (x, y) from the token stream."""
         if token[0] not in self.number_tokens:
             raise SyntaxError("expecting a number; got %r" % (token,))
+        assert token[1] is not None
         x = getcontext().create_decimal(token[1])
         token = next_val_fn()
         if token[0] not in self.number_tokens:
             raise SyntaxError("expecting a number; got %r" % (token,))
+        assert token[1] is not None
         y = getcontext().create_decimal(token[1])
         token = next_val_fn()
         return [x, y], token

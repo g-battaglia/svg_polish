@@ -100,4 +100,5 @@ dev = [
     "ruff>=0.11",
     "mypy>=1.15",
     "poethepoet>=0.34",
+    "hypothesis>=6.152.1",
 ]

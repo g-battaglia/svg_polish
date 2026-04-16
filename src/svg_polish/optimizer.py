@@ -1,5 +1,46 @@
 """SVG optimization engine.
 
+This module is the heart of ``svg_polish``: it parses an SVG document into a
+``minidom`` tree, runs a fixed sequence of optimization passes, and serializes
+the result back to a string. The public entry point is :func:`scourString`;
+:func:`scourXmlFile` is a convenience wrapper that reads from disk.
+
+The module is intentionally kept as a single file. It is large (~4.7k lines)
+but organized into clearly delimited sections (see the index below) and every
+section is fully covered by tests. Splitting into many sub-modules was
+evaluated (see ``PLAN/06-simplification.md``) and deferred: the cross-module
+import graph would be densely connected (style ↔ gradient ↔ dom ↔ path), and
+the project does not currently re-use these helpers from outside ``svg_polish``.
+
+**Section index** (line numbers approximate; jump via the ``# ===`` headers):
+
+    XML and SVG Namespace Constants ............ § around line 72
+    SVG Presentation Attributes ................ § 78
+    Named CSS Colors ........................... § 84
+    CSS/SVG Default Property Values ............ § 90
+    Numeric Helpers ............................ § 96
+    Length Parsing (Unit, SVGLength) ........... § 115
+    DOM Traversal and Reference Tracking ....... § 121
+    Unused Element Removal ..................... § 290
+    ID Management (shorten, rename, protect) ... § 382
+    Namespace Cleanup .......................... § 642
+    Descriptive Element Removal ................ § 701
+    Group Operations (collapse/merge/create) ... § 735
+    Unused Attribute Cleanup ................... § 1158
+    Gradient Optimization ...................... § 1239
+    Style Handling (get/set/repair/inherit) .... § 1623
+    Default Attribute Removal .................. § 1990
+    Color Conversion ........................... § 2151
+    Path Optimization .......................... § 2272
+    Length Scouring (Precision Reduction) ...... § 3021
+    Transform Optimization ..................... § 3145
+    Comment Removal and Raster Embedding ....... § 3414
+    Document Sizing and Namespace Remapping .... § 3524
+    XML Serialization .......................... § 3609
+    Main Optimization Pipeline (scourString) ... § 3814
+    Command-Line Interface ..................... § 4209
+    File I/O and Reporting ..................... § 4529
+
 Originally from Scour (https://github.com/scour-project/scour).
 
 Original copyright:
@@ -22,6 +63,7 @@ import urllib.parse
 import urllib.request
 import xml.dom.minidom
 from collections import defaultdict
+from collections.abc import Iterable, Iterator
 from decimal import Context, Decimal, InvalidOperation, getcontext
 from typing import IO, TYPE_CHECKING, Any
 from xml.dom import Node, NotFoundErr
@@ -38,6 +80,7 @@ from svg_polish.constants import (
     XML_ENTS_ESCAPE_APOS,
     XML_ENTS_ESCAPE_QUOT,
     XML_ENTS_NO_QUOTES,
+    DefaultAttribute,
     _name_to_hex,
     default_attributes_per_element,
     default_attributes_universal,
@@ -53,18 +96,18 @@ from svg_polish.stats import ScourStats
 from svg_polish.svg_regex import svg_parser
 from svg_polish.svg_transform import svg_transform_parser
 from svg_polish.types import (
-    IdentifiedElements,  # noqa: F401 — used in annotations
-    PathData,  # noqa: F401 — used in annotations
-    ReferencedIDs,  # noqa: F401 — used in annotations
-    StyleMap,  # noqa: F401 — used in annotations
+    IdentifiedElements,
+    PathData,
+    ReferencedIDs,
+    StyleMap,
     SVGLength,
-    TransformData,  # noqa: F401 — used in annotations
+    TransformData,
     Unit,
     _precision,
 )
 
 if TYPE_CHECKING:
-    from xml.dom.minidom import Document, Element
+    from xml.dom.minidom import Attr, Document, Element
 
 
 # =============================================================================
@@ -156,9 +199,9 @@ def findReferencedElements(node: Element, ids: ReferencedIDs | None = None) -> R
             # one stretch of text, please! (we could use node.normalize(), but
             # this actually modifies the node, and we don't want to keep
             # whitespace around if there's any)
-            stylesheet = "".join(child.nodeValue for child in node.childNodes)
+            stylesheet = "".join(child.nodeValue or "" for child in node.childNodes)
             cssRules = parseCssString(stylesheet) if stylesheet else []
-            node._cachedCssRules = cssRules
+            node._cachedCssRules = cssRules  # type: ignore[attr-defined]
         for rule in cssRules:
             for propname in rule["properties"]:
                 propval = rule["properties"][propname]
@@ -198,36 +241,90 @@ def findReferencedElements(node: Element, ids: ReferencedIDs | None = None) -> R
     return ids
 
 
+# Precompiled regex matching url(#id), url('#id'), url("#id") at the start
+# of an attribute value. Captures the ID itself (group 1).
+# Used by findReferencingProperty: a single compiled regex outperforms the
+# multi-branch startswith/find chain by ~12% in micro-benchmarks and is more
+# concise than handling all three quoting styles manually.
+_URL_REF_PROPERTY_RE = re.compile(r"^url\(['\"]?#([^'\")]+)['\"]?\)")
+
+
 def findReferencingProperty(node: Element, prop: str, val: str, ids: ReferencedIDs) -> None:
     """Record *node* in *ids* if *prop*/*val* contains a ``url(#id)`` reference.
 
-    Handles three ``url()`` forms: unquoted, double-quoted, and single-quoted.
-    Uses string operations (``startswith``/``find``) instead of regex for speed.
+    Handles three ``url()`` forms: unquoted, double-quoted, and single-quoted,
+    via a single precompiled regex (:data:`_URL_REF_PROPERTY_RE`).
     """
     if prop not in referencingProps or not val:
         return
 
-    # Extract the ID from url(#id), url("#id"), or url('#id') patterns.
-    # String ops are ~3x faster than re.match for these simple fixed-prefix forms.
-    ref_id: str | None = None
-    if val.startswith("url(#"):
-        end = val.find(")")
-        if end > 5:
-            ref_id = val[5:end]
-    elif val.startswith('url("#'):
-        end = val.find('")')
-        if end > 6:
-            ref_id = val[6:end]
-    elif val.startswith("url('#"):
-        end = val.find("')")
-        if end > 6:
-            ref_id = val[6:end]
+    match = _URL_REF_PROPERTY_RE.match(val)
+    if match is None:
+        return
 
-    if ref_id is not None:
-        if ref_id in ids:
-            ids[ref_id].add(node)
-        else:
-            ids[ref_id] = {node}
+    ref_id = match.group(1)
+    if ref_id in ids:
+        ids[ref_id].add(node)
+    else:
+        ids[ref_id] = {node}
+
+
+def _replace_url_refs(text: str, id_from: str, id_to: str) -> tuple[str, int]:
+    """Replace all ``url(#id_from)`` references in *text* with ``url(#id_to)``.
+
+    Handles three quoting styles: unquoted, single-quoted, double-quoted.
+    Uses :func:`re.sub` on a pre-built pattern that matches all three forms
+    at once, which is cleaner than three separate ``str.replace()`` calls.
+
+    Args:
+        text: The attribute value or CSS text to update.
+        id_from: The ID to replace.
+        id_to: The replacement ID.
+
+    Returns:
+        A tuple of (new_text, replacement_count).
+    """
+    pattern = _build_url_ref_regex(id_from)
+    new_text, count = pattern.subn("url(#" + id_to + ")", text)
+    return new_text, count
+
+
+def _build_url_ref_regex(elem_id: str) -> re.Pattern[str]:
+    """Build a compiled regex that matches ``url(#elem_id)`` in all quoting styles.
+
+    Matches ``url(#id)``, ``url('#id')``, and ``url("#id")``.
+    The pattern is built from a template with :func:`re.escape` to handle
+    IDs containing regex metacharacters.
+
+    Args:
+        elem_id: The element ID to match.
+
+    Returns:
+        A compiled regex pattern.
+    """
+    escaped = re.escape(elem_id)
+    return re.compile(r"url\(['\"]?#" + escaped + r"['\"]?\)")
+
+
+# Cache for _build_url_ref_regex — avoids recompiling the same pattern.
+_url_ref_regex_cache: dict[str, re.Pattern[str]] = {}
+
+
+def _get_url_ref_regex(elem_id: str) -> re.Pattern[str]:
+    """Get (or create and cache) a compiled regex for ``url(#elem_id)``.
+
+    Caching avoids recompiling the same pattern across multiple calls to
+    :func:`renameID` and :func:`dedup_gradient` for the same ID.
+
+    Args:
+        elem_id: The element ID to match.
+
+    Returns:
+        A compiled regex pattern.
+    """
+    if elem_id not in _url_ref_regex_cache:
+        _url_ref_regex_cache[elem_id] = _build_url_ref_regex(elem_id)
+    return _url_ref_regex_cache[elem_id]
 
 
 # =============================================================================
@@ -239,7 +336,7 @@ def removeUnusedDefs(
     doc: Document,
     defElem: Element,
     elemsToRemove: list[Element] | None = None,
-    referencedIDs: dict[str, set[Element]] | None = None,
+    referencedIDs: ReferencedIDs | None = None,
 ) -> list[Element]:
     """Collect elements inside *defElem* that are not referenced anywhere in *doc*."""
     if elemsToRemove is None:
@@ -248,7 +345,9 @@ def removeUnusedDefs(
     # removeUnusedDefs do not change the XML itself; therefore there is no point in
     # recomputing findReferencedElements when we recurse into child nodes.
     if referencedIDs is None:
-        referencedIDs = findReferencedElements(doc.documentElement)
+        root = doc.documentElement
+        assert root is not None
+        referencedIDs = findReferencedElements(root)
 
     keepTags = ["font", "style", "metadata", "script", "title", "desc"]
     for elem in defElem.childNodes:
@@ -273,8 +372,8 @@ def remove_unreferenced_elements(
     doc: Document,
     keepDefs: bool,
     stats: ScourStats,
-    identifiedElements: dict[str, Element] | None = None,
-    referencedIDs: dict[str, set[Element]] | None = None,
+    identifiedElements: IdentifiedElements | None = None,
+    referencedIDs: ReferencedIDs | None = None,
 ) -> int:
     """Remove unreferenced gradients/patterns outside ``<defs>`` and unused elements inside.
 
@@ -284,31 +383,36 @@ def remove_unreferenced_elements(
 
     # Remove certain unreferenced elements outside of defs
     removeTags = ["linearGradient", "radialGradient", "pattern"]
+    root = doc.documentElement
+    assert root is not None
     if identifiedElements is None:
-        identifiedElements = findElementsWithId(doc.documentElement)
+        identifiedElements = findElementsWithId(root)
     if referencedIDs is None:
-        referencedIDs = findReferencedElements(doc.documentElement)
+        referencedIDs = findReferencedElements(root)
 
     if not keepDefs:
         # Remove most unreferenced elements inside defs
-        defs = doc.documentElement.getElementsByTagName("defs")
+        defs = root.getElementsByTagName("defs")
         for aDef in defs:
             elemsToRemove = removeUnusedDefs(doc, aDef, referencedIDs=referencedIDs)
             for elem in elemsToRemove:
-                elem.parentNode.removeChild(elem)
+                parent = elem.parentNode
+                assert parent is not None
+                parent.removeChild(elem)
             stats.num_elements_removed += len(elemsToRemove)
             num += len(elemsToRemove)
 
     for elem_id, elem in identifiedElements.items():
         if elem_id not in referencedIDs:
             goner = elem
+            goner_parent = goner.parentNode if goner is not None else None
             if (
                 goner is not None
                 and goner.nodeName in removeTags
-                and goner.parentNode is not None
-                and goner.parentNode.tagName != "defs"
+                and goner_parent is not None
+                and getattr(goner_parent, "tagName", None) != "defs"
             ):
-                goner.parentNode.removeChild(goner)
+                goner_parent.removeChild(goner)
                 num += 1
                 stats.num_elements_removed += 1
 
@@ -324,8 +428,8 @@ def shortenIDs(
     doc: Document,
     prefix: str,
     options: optparse.Values,
-    identifiedElements: dict[str, Element] | None = None,
-    referencedIDs: dict[str, set[Element]] | None = None,
+    identifiedElements: IdentifiedElements | None = None,
+    referencedIDs: ReferencedIDs | None = None,
 ) -> int:
     """Shorten ID names so the most-referenced IDs get the shortest names.
 
@@ -333,22 +437,27 @@ def shortenIDs(
     """
     num = 0
 
-    if identifiedElements is None:
-        identifiedElements = findElementsWithId(doc.documentElement)
-    # This map contains maps the (original) ID to the nodes referencing it.
-    # At the end of this function, it will no longer be valid and while we
-    # could keep it up to date, it will complicate the code for no gain
-    # (as we do not reuse the data structure beyond this function).
-    if referencedIDs is None:
-        referencedIDs = findReferencedElements(doc.documentElement)
+    if identifiedElements is None or referencedIDs is None:
+        root_doc = doc.documentElement
+        assert root_doc is not None
+        if identifiedElements is None:
+            identifiedElements = findElementsWithId(root_doc)
+        # This map contains maps the (original) ID to the nodes referencing it.
+        # At the end of this function, it will no longer be valid and while we
+        # could keep it up to date, it will complicate the code for no gain
+        # (as we do not reuse the data structure beyond this function).
+        if referencedIDs is None:
+            referencedIDs = findReferencedElements(root_doc)
 
     # Make idList (list of idnames) sorted by reference count
     # descending, so the highest reference count is first.
     # First check that there's actually a defining element for the current ID name.
     # (Cyn: I've seen documents with #id references but no element with that ID!)
-    idList = [(len(referencedIDs[rid]), rid) for rid in referencedIDs if rid in identifiedElements]
-    idList.sort(reverse=True)
-    idList = [rid for count, rid in idList]
+    idCounts: list[tuple[int, str]] = [
+        (len(referencedIDs[rid]), rid) for rid in referencedIDs if rid in identifiedElements
+    ]
+    idCounts.sort(reverse=True)
+    idList: list[str] = [rid for count, rid in idCounts]
 
     # Add unreferenced IDs to end of idList in arbitrary order
     idList.extend([rid for rid in identifiedElements if rid not in idList])
@@ -407,7 +516,7 @@ def shortenIDs(
     return num
 
 
-def compute_id_lengths(highest: int) -> Any:
+def compute_id_lengths(highest: int) -> Iterator[tuple[int, int]]:
     """Compute how many IDs are available of a given size
 
     Example:
@@ -457,7 +566,7 @@ def intToID(idnum: int, prefix: str) -> str:
 def renameID(
     idFrom: str,
     idTo: str,
-    identifiedElements: dict[str, Element],
+    identifiedElements: IdentifiedElements,
     referringNodes: set[Element] | None,
 ) -> int:
     """Rename an element's ID from *idFrom* to *idTo*, updating all references.
@@ -465,17 +574,17 @@ def renameID(
     Returns the number of bytes saved.
     """
 
-    num = 0
+    num_bytes_saved = 0
 
-    definingNode = identifiedElements[idFrom]
-    definingNode.setAttribute("id", idTo)
-    num += len(idFrom) - len(idTo)
+    defining_node = identifiedElements[idFrom]
+    defining_node.setAttribute("id", idTo)
+    num_bytes_saved += len(idFrom) - len(idTo)
 
     # Update references to renamed node
     if referringNodes is not None:
-        # Look for the idFrom ID name in each of the referencing elements,
-        # exactly like findReferencedElements would.
-        # NOTE: This re-parses attributes similarly to findReferencedElements
+        # Pre-build the URL replacement regex once for all nodes.
+        url_pattern = _get_url_ref_regex(idFrom)
+        replacement = "url(#" + idTo + ")"
 
         for node in referringNodes:
             # if this node is a style element, parse its text into CSS
@@ -486,46 +595,41 @@ def renameID(
                     # there's a CDATASection node surrounded by whitespace
                     # nodes
                     # (node.normalize() will NOT work here, it only acts on Text nodes)
-                    oldValue = "".join(child.nodeValue for child in node.childNodes)
-                    # not going to reparse the whole thing
-                    newValue = oldValue.replace("url(#" + idFrom + ")", "url(#" + idTo + ")")
-                    newValue = newValue.replace("url(#'" + idFrom + "')", "url(#" + idTo + ")")
-                    newValue = newValue.replace('url(#"' + idFrom + '")', "url(#" + idTo + ")")
-                    # and now replace all the children with this new stylesheet.
-                    # again, this is in case the stylesheet was a CDATASection
-                    node.childNodes[:] = [node.ownerDocument.createTextNode(newValue)]
-                    num += len(oldValue) - len(newValue)
+                    old_value = "".join(child.nodeValue or "" for child in node.childNodes)
+                    new_value, _ = url_pattern.subn(replacement, old_value)
+                    # Replace all children with the updated stylesheet text.
+                    # This handles CDATASection nodes surrounded by whitespace.
+                    owner_doc = node.ownerDocument
+                    assert owner_doc is not None
+                    node.childNodes[:] = [owner_doc.createTextNode(new_value)]
+                    num_bytes_saved += len(old_value) - len(new_value)
 
             # if xlink:href is set to #idFrom, then change the id
             href = node.getAttributeNS(NS["XLINK"], "href")
             if href == "#" + idFrom:
                 node.setAttributeNS(NS["XLINK"], "href", "#" + idTo)
-                num += len(idFrom) - len(idTo)
+                num_bytes_saved += len(idFrom) - len(idTo)
 
             # if the style has url(#idFrom), then change the id
             styles = node.getAttribute("style")
             if styles:
-                newValue = styles.replace("url(#" + idFrom + ")", "url(#" + idTo + ")")
-                newValue = newValue.replace("url('#" + idFrom + "')", "url(#" + idTo + ")")
-                newValue = newValue.replace('url("#' + idFrom + '")', "url(#" + idTo + ")")
-                node.setAttribute("style", newValue)
+                new_value, _ = url_pattern.subn(replacement, styles)
+                node.setAttribute("style", new_value)
                 _invalidateStyleCache(node)
-                num += len(styles) - len(newValue)
+                num_bytes_saved += len(styles) - len(new_value)
 
             # now try the fill, stroke, filter attributes
             for attr in referencingProps:
-                oldValue = node.getAttribute(attr)
-                if oldValue:
-                    newValue = oldValue.replace("url(#" + idFrom + ")", "url(#" + idTo + ")")
-                    newValue = newValue.replace("url('#" + idFrom + "')", "url(#" + idTo + ")")
-                    newValue = newValue.replace('url("#' + idFrom + '")', "url(#" + idTo + ")")
-                    node.setAttribute(attr, newValue)
-                    num += len(oldValue) - len(newValue)
+                old_value = node.getAttribute(attr)
+                if old_value:
+                    new_value, _ = url_pattern.subn(replacement, old_value)
+                    node.setAttribute(attr, new_value)
+                    num_bytes_saved += len(old_value) - len(new_value)
 
-    return num
+    return num_bytes_saved
 
 
-def protected_ids(seenIDs: dict[str, Element], options: optparse.Values) -> list[str]:
+def protected_ids(seenIDs: IdentifiedElements, options: optparse.Values) -> list[str]:
     """Return a list of protected IDs out of the seenIDs."""
     protectedIDs = []
     if options.protect_ids_prefix or options.protect_ids_noninkscape or options.protect_ids_list:
@@ -549,9 +653,11 @@ def protected_ids(seenIDs: dict[str, Element], options: optparse.Values) -> list
     return protectedIDs
 
 
-def unprotected_ids(doc: Document, options: optparse.Values) -> dict[str, Element]:
+def unprotected_ids(doc: Document, options: optparse.Values) -> IdentifiedElements:
     """Return identified elements with protected IDs removed."""
-    identifiedElements = findElementsWithId(doc.documentElement)
+    root = doc.documentElement
+    assert root is not None
+    identifiedElements = findElementsWithId(root)
     protectedIDs = protected_ids(identifiedElements, options)
     if protectedIDs:
         for protected_id in protectedIDs:
@@ -559,7 +665,7 @@ def unprotected_ids(doc: Document, options: optparse.Values) -> dict[str, Elemen
     return identifiedElements
 
 
-def remove_unreferenced_ids(referencedIDs: dict[str, set[Element]], identifiedElements: dict[str, Element]) -> int:
+def remove_unreferenced_ids(referencedIDs: ReferencedIDs, identifiedElements: IdentifiedElements) -> int:
     """Remove ``id`` attributes that are not referenced anywhere.
 
     Returns the number of ID attributes removed.
@@ -579,15 +685,22 @@ def remove_unreferenced_ids(referencedIDs: dict[str, set[Element]], identifiedEl
 
 
 def removeNamespacedAttributes(node: Element, namespaces: list[str]) -> int:
-    """Remove all attributes belonging to any of the given *namespaces*."""
+    """Remove all attributes belonging to any of the given *namespaces*.
+
+    Recursively walks *node* and any descendants. Non-Element nodes are skipped
+    (they cannot carry XML namespace-qualified attributes). The function is
+    annotated as taking ``Element`` for its primary call sites; the recursion
+    passes child nodes (any of ``Element|Comment|Text|...``) which are filtered
+    by the ``nodeType`` guard at the top of the function.
+    """
     num = 0
     if node.nodeType == Node.ELEMENT_NODE:
         # remove all namespace'd attributes from this element
         attrList = node.attributes
-        attrsToRemove = []
+        attrsToRemove: list[str] = []
         for attrNum in range(attrList.length):
             attr = attrList.item(attrNum)
-            if attr is not None and attr.namespaceURI in namespaces:
+            if attr is not None and attr.namespaceURI in namespaces and attr.nodeName is not None:
                 attrsToRemove.append(attr.nodeName)
         for attrName in attrsToRemove:
             node.removeAttribute(attrName)
@@ -595,12 +708,18 @@ def removeNamespacedAttributes(node: Element, namespaces: list[str]) -> int:
 
         # now recurse for children
         for child in node.childNodes:
-            num += removeNamespacedAttributes(child, namespaces)
+            num += removeNamespacedAttributes(child, namespaces)  # type: ignore[arg-type]
     return num
 
 
 def removeNamespacedElements(node: Element, namespaces: list[str]) -> int:
-    """Remove all child elements belonging to any of the given *namespaces*."""
+    """Remove all child elements belonging to any of the given *namespaces*.
+
+    Recursively walks *node* and any descendants. Non-Element nodes are skipped
+    by the ``nodeType`` guard. The recursion passes child nodes that may include
+    Comment/Text/etc.; the type:ignore on the recursive call is structurally
+    safe because of that guard.
+    """
     num = 0
     if node.nodeType == Node.ELEMENT_NODE:
         # remove all namespace'd child nodes from this element
@@ -615,7 +734,7 @@ def removeNamespacedElements(node: Element, namespaces: list[str]) -> int:
 
         # now recurse for children
         for child in node.childNodes:
-            num += removeNamespacedElements(child, namespaces)
+            num += removeNamespacedElements(child, namespaces)  # type: ignore[arg-type]
     return num
 
 
@@ -626,7 +745,7 @@ def removeNamespacedElements(node: Element, namespaces: list[str]) -> int:
 
 def remove_descriptive_elements(doc: Document, options: optparse.Values) -> int:
     """Remove ``<title>``, ``<desc>``, and ``<metadata>`` elements when requested by options."""
-    elementTypes = []
+    elementTypes: list[str] = []
     if options.remove_descriptive_elements:
         elementTypes.extend(("title", "desc", "metadata"))
     else:
@@ -639,12 +758,16 @@ def remove_descriptive_elements(doc: Document, options: optparse.Values) -> int:
     if not elementTypes:
         return 0
 
-    elementsToRemove = []
+    root = doc.documentElement
+    assert root is not None
+    elementsToRemove: list[Element] = []
     for elementType in elementTypes:
-        elementsToRemove.extend(doc.documentElement.getElementsByTagName(elementType))
+        elementsToRemove.extend(root.getElementsByTagName(elementType))
 
     for element in elementsToRemove:
-        element.parentNode.removeChild(element)
+        parent = element.parentNode
+        assert parent is not None
+        parent.removeChild(element)
 
     return len(elementsToRemove)
 
@@ -688,9 +811,13 @@ def remove_nested_groups(node: Element, stats: ScourStats) -> int:
                     groupsToRemove.append(child)
 
     for g in groupsToRemove:
+        g_parent = g.parentNode
+        assert g_parent is not None
         while g.childNodes.length > 0:
-            g.parentNode.insertBefore(g.firstChild, g)
-        g.parentNode.removeChild(g)
+            first_child = g.firstChild
+            assert first_child is not None
+            g_parent.insertBefore(first_child, g)  # type: ignore[type-var]
+        g_parent.removeChild(g)
 
     num += len(groupsToRemove)
     stats.num_elements_removed += len(groupsToRemove)
@@ -702,7 +829,7 @@ def remove_nested_groups(node: Element, stats: ScourStats) -> int:
     return num
 
 
-def moveCommonAttributesToParentGroup(elem: Element, referencedElements: dict[str, set[Element]]) -> int:
+def moveCommonAttributesToParentGroup(elem: Element, referencedElements: ReferencedIDs) -> int:
     """Move attributes shared by all children up to a parent ``<g>`` element.
 
     Recursively calls this function on all children of the passed in element
@@ -738,6 +865,7 @@ def moveCommonAttributesToParentGroup(elem: Element, referencedElements: dict[st
     attrList = childElements[0].attributes
     for index in range(attrList.length):
         attr = attrList.item(index)
+        assert attr is not None
         # this is most of the inheritable properties from http://www.w3.org/TR/SVG11/propidx.html
         # and http://www.w3.org/TR/SVGTiny12/attributeTable.html
         if attr.nodeName in [
@@ -773,7 +901,7 @@ def moveCommonAttributesToParentGroup(elem: Element, referencedElements: dict[st
             "writing-mode",
         ]:
             # we just add all the attributes from the first child
-            commonAttrs[attr.nodeName] = attr.nodeValue
+            commonAttrs[attr.nodeName] = attr.nodeValue or ""
 
     # for each subsequent child element
     for childNum in range(len(childElements)):
@@ -817,6 +945,7 @@ def mergeSiblingGroupsWithCommonAttributes(elem: Element) -> int:
     i = elem.childNodes.length - 1
     while i >= 0:
         currentNode = elem.childNodes.item(i)
+        assert currentNode is not None
         if (
             currentNode.nodeType != Node.ELEMENT_NODE
             or currentNode.nodeName != "g"
@@ -832,6 +961,7 @@ def mergeSiblingGroupsWithCommonAttributes(elem: Element) -> int:
         runElements = 1
         while runStart > 0:
             nextNode = elem.childNodes.item(runStart - 1)
+            assert nextNode is not None
             if nextNode.nodeType == Node.ELEMENT_NODE:
                 if nextNode.nodeName != "g" or nextNode.namespaceURI != NS["SVG"]:
                     break
@@ -854,10 +984,12 @@ def mergeSiblingGroupsWithCommonAttributes(elem: Element) -> int:
         # past it into a text node or a comment node.
         while True:
             node = elem.childNodes.item(runStart)
+            assert node is not None
             if node.nodeType == Node.ELEMENT_NODE and node.nodeName == "g" and node.namespaceURI == NS["SVG"]:
                 break
             runStart += 1
         primaryGroup = elem.childNodes.item(runStart)
+        assert primaryGroup is not None
         runStart += 1
         nodes = elem.childNodes[runStart : runEnd + 1]
         for node in nodes:
@@ -928,6 +1060,7 @@ def create_groups_for_common_attributes(elem: Element, stats: ScourStats) -> Non
         curChild = elem.childNodes.length - 1
         while curChild >= 0:
             childNode = elem.childNodes.item(curChild)
+            assert childNode is not None
 
             if (
                 childNode.nodeType == Node.ELEMENT_NODE
@@ -999,6 +1132,7 @@ def create_groups_for_common_attributes(elem: Element, stats: ScourStats) -> Non
                 # attribute value, preserving any nodes in-between.
                 while runStart > 0:
                     nextNode = elem.childNodes.item(runStart - 1)
+                    assert nextNode is not None
                     if nextNode.nodeType == Node.ELEMENT_NODE:
                         if nextNode.getAttribute(curAttr) != value:
                             break
@@ -1011,7 +1145,9 @@ def create_groups_for_common_attributes(elem: Element, stats: ScourStats) -> Non
                 if runElements >= 3:
                     # Include whitespace/comment/etc. nodes in the run.
                     while runEnd < elem.childNodes.length - 1:
-                        if elem.childNodes.item(runEnd + 1).nodeType == Node.ELEMENT_NODE:
+                        next_check = elem.childNodes.item(runEnd + 1)
+                        assert next_check is not None
+                        if next_check.nodeType == Node.ELEMENT_NODE:
                             break
                         else:
                             runEnd += 1
@@ -1034,6 +1170,7 @@ def create_groups_for_common_attributes(elem: Element, stats: ScourStats) -> Non
                     # Create a <g> element from scratch.
                     # We need the Document for this.
                     document = elem.ownerDocument
+                    assert document is not None
                     group = document.createElementNS(NS["SVG"], "g")
                     # Move the run of elements to the group.
                     # a) ADD the nodes to the new group.
@@ -1083,9 +1220,10 @@ def removeUnusedAttributesOnParent(elem: Element) -> int:
 
     # get all attribute values on this parent
     attrList = elem.attributes
-    unusedAttrs = {}
+    unusedAttrs: dict[str, str] = {}
     for index in range(attrList.length):
         attr = attrList.item(index)
+        assert attr is not None
         if attr.nodeName in [
             "clip-rule",
             "display-align",
@@ -1118,7 +1256,7 @@ def removeUnusedAttributesOnParent(elem: Element) -> int:
             "word-spacing",
             "writing-mode",
         ]:
-            unusedAttrs[attr.nodeName] = attr.nodeValue
+            unusedAttrs[attr.nodeName] = attr.nodeValue or ""
 
     # for each child, if at least one child inherits the parent's attribute, then remove
     for child in childElements:
@@ -1149,8 +1287,8 @@ def remove_duplicate_gradient_stops(doc: Document, stats: ScourStats) -> int:
 
     for gradType in ["linearGradient", "radialGradient"]:
         for grad in doc.getElementsByTagName(gradType):
-            stops = {}
-            stopsToRemove = []
+            stops: dict[float | int, list[str]] = {}
+            stopsToRemove: list[Element] = []
             for stop in grad.getElementsByTagName("stop"):
                 # convert percentages into a floating point number
                 offsetU = SVGLength(stop.getAttribute("offset"))
@@ -1176,7 +1314,9 @@ def remove_duplicate_gradient_stops(doc: Document, stats: ScourStats) -> int:
                 stops[offset] = [color, opacity, style]
 
             for stop in stopsToRemove:
-                stop.parentNode.removeChild(stop)
+                stop_parent = stop.parentNode
+                assert stop_parent is not None
+                stop_parent.removeChild(stop)
             num += len(stopsToRemove)
             stats.num_elements_removed += len(stopsToRemove)
 
@@ -1186,8 +1326,8 @@ def remove_duplicate_gradient_stops(doc: Document, stats: ScourStats) -> int:
 def collapse_singly_referenced_gradients(
     doc: Document,
     stats: ScourStats,
-    identifiedElements: dict[str, Element] | None = None,
-    referencedIDs: dict[str, set[Element]] | None = None,
+    identifiedElements: IdentifiedElements | None = None,
+    referencedIDs: ReferencedIDs | None = None,
 ) -> int:
     """Merge gradients referenced by exactly one other gradient into their parent.
 
@@ -1229,10 +1369,13 @@ def collapse_singly_referenced_gradients(
     """
     num = 0
 
-    if identifiedElements is None:
-        identifiedElements = findElementsWithId(doc.documentElement)
-    if referencedIDs is None:
-        referencedIDs = findReferencedElements(doc.documentElement)
+    if identifiedElements is None or referencedIDs is None:
+        root_doc = doc.documentElement
+        assert root_doc is not None
+        if identifiedElements is None:
+            identifiedElements = findElementsWithId(root_doc)
+        if referencedIDs is None:
+            referencedIDs = findReferencedElements(root_doc)
 
     # make sure to reset the ref'ed ids for when we are running this in testscour
     for rid, nodes in referencedIDs.items():
@@ -1293,7 +1436,9 @@ def collapse_singly_referenced_gradients(
                         refElem.removeAttributeNS(NS["XLINK"], "href")
 
                     # now delete elem
-                    elem.parentNode.removeChild(elem)
+                    elem_parent = elem.parentNode
+                    assert elem_parent is not None
+                    elem_parent.removeChild(elem)
                     stats.num_elements_removed += 1
                     num += 1
 
@@ -1331,6 +1476,7 @@ def computeGradientBucketKey(grad: Element) -> str:
     if stops.length:
         for i in range(stops.length):
             stop = stops.item(i)
+            assert stop is not None
             for attr in gradStopBucketsAttr:
                 stopKey = stop.getAttribute(attr)
                 subKeys.append(stopKey)
@@ -1341,7 +1487,9 @@ def computeGradientBucketKey(grad: Element) -> str:
     return "\x1e".join(subKeys)
 
 
-def detect_duplicate_gradients(*grad_lists: Any) -> Any:
+def detect_duplicate_gradients(
+    *grad_lists: Iterable[Element],
+) -> Iterator[tuple[str, list[str], list[Element]]]:
     """Detect duplicate gradients from each iterable/generator given as argument.
 
     Yields (master, master_id, duplicates_id, duplicates) tuples where:
@@ -1392,9 +1540,12 @@ def dedup_gradient(
     master_id: str,
     duplicates_ids: list[str],
     duplicates: list[Element],
-    referenced_ids: dict[str, set[Element]],
+    referenced_ids: ReferencedIDs,
 ) -> None:
     """Replace all references to *duplicates* with references to *master_id*."""
+    # Build a single regex that matches ALL duplicate IDs at once.
+    # This is more efficient than per-ID patterns (unlike renameID which
+    # handles a single ID and uses the cached _get_url_ref_regex).
     func_iri = None
     for dup_id, dup_grad in zip(duplicates_ids, duplicates):
         # if the duplicate gradient no longer has a parent that means it was
@@ -1450,7 +1601,7 @@ def dedup_gradient(
         referenced_ids[master_id] = master_references
 
 
-def removeDuplicateGradients(doc: Document, referencedIDs: dict[str, set[Element]] | None = None) -> int:
+def removeDuplicateGradients(doc: Document, referencedIDs: ReferencedIDs | None = None) -> int:
     """Detect and remove duplicate linear/radial gradients, updating all references.
 
     Two gradients are considered duplicates when they produce the same visual
@@ -1489,7 +1640,12 @@ def removeDuplicateGradients(doc: Document, referencedIDs: dict[str, set[Element
     num = 0
 
     # get a collection of all elements that are referenced and their referencing elements
-    referenced_ids = referencedIDs if referencedIDs is not None else findReferencedElements(doc.documentElement)
+    if referencedIDs is None:
+        root_for_refs = doc.documentElement
+        assert root_for_refs is not None
+        referenced_ids = findReferencedElements(root_for_refs)
+    else:
+        referenced_ids = referencedIDs
 
     while prev_num != num:
         prev_num = num
@@ -1517,25 +1673,26 @@ def _getStyle(node: Element) -> StyleMap:
     """
     if node.nodeType != Node.ELEMENT_NODE:
         return {}
-    cached = getattr(node, "_cachedStyle", None)
+    cached: StyleMap | None = getattr(node, "_cachedStyle", None)
     if cached is not None:
         return cached
     style_attribute = node.getAttribute("style")
     if style_attribute:
-        styleMap = {}
+        styleMap: StyleMap = {}
         for style in style_attribute.split(";"):
             propval = style.split(":")
             if len(propval) == 2:
                 styleMap[propval[0].strip()] = propval[1].strip()
-        node._cachedStyle = styleMap
+        node._cachedStyle = styleMap  # type: ignore[attr-defined]
         return styleMap
-    node._cachedStyle = {}
-    return node._cachedStyle
+    empty: StyleMap = {}
+    node._cachedStyle = empty  # type: ignore[attr-defined]
+    return empty
 
 
 def _setStyle(node: Element, styleMap: StyleMap) -> Element:
     """Set the ``style`` attribute of *node* from *styleMap* and update the cache."""
-    node._cachedStyle = styleMap
+    node._cachedStyle = styleMap  # type: ignore[attr-defined]
     fixedStyle = ";".join(prop + ":" + styleMap[prop] for prop in styleMap)
     if fixedStyle:
         node.setAttribute("style", fixedStyle)
@@ -1546,7 +1703,7 @@ def _setStyle(node: Element, styleMap: StyleMap) -> Element:
 
 def _invalidateStyleCache(node: Element) -> None:
     """Clear the cached style dict so the next ``_getStyle`` re-parses."""
-    node._cachedStyle = None
+    node._cachedStyle = None  # type: ignore[attr-defined]
 
 
 def repairStyle(node: Element, options: optparse.Values) -> int:
@@ -1701,7 +1858,7 @@ def repairStyle(node: Element, options: optparse.Values) -> int:
             # if the node is not the root <svg> element the SVG's user agent style sheet
             # overrides the initial (i.e. default) value with the value 'hidden', which can consequently be removed
             # (see last bullet point in the link above)
-            elif node != node.ownerDocument.documentElement:
+            elif node.ownerDocument is not None and node != node.ownerDocument.documentElement:
                 if styleMap["overflow"] == "hidden":
                     del styleMap["overflow"]
                     num += 1
@@ -1720,9 +1877,10 @@ def repairStyle(node: Element, options: optparse.Values) -> int:
 
         _setStyle(node, styleMap)
 
-    # recurse for our child elements
+    # recurse for our child elements (non-Element nodes are handled by an
+    # early return inside repairStyle, hence the type:ignore).
     for child in node.childNodes:
-        num += repairStyle(child, options)
+        num += repairStyle(child, options)  # type: ignore[arg-type]
 
     return num
 
@@ -1735,23 +1893,23 @@ def styleInheritedFromParent(node: Element, style: str) -> str | None:
     parentNode = node.parentNode
 
     # return None if we reached the Document element
-    if parentNode.nodeType == Node.DOCUMENT_NODE:
+    if parentNode is None or parentNode.nodeType == Node.DOCUMENT_NODE:
         return None
 
     # check styles first (they take precedence over presentation attributes)
-    styles = _getStyle(parentNode)
+    styles = _getStyle(parentNode)  # type: ignore[arg-type]
     if style in styles:
         value = styles[style]
         if not value == "inherit":
             return value
 
     # check attributes
-    value = parentNode.getAttribute(style)
+    value = parentNode.getAttribute(style)  # type: ignore[union-attr]
     if value not in ["", "inherit"]:
-        return parentNode.getAttribute(style)
+        return parentNode.getAttribute(style)  # type: ignore[union-attr]
 
     # check the next parent recursively if we did not find a value yet
-    return styleInheritedFromParent(parentNode, style)
+    return styleInheritedFromParent(parentNode, style)  # type: ignore[arg-type]
 
 
 def styleInheritedByChild(node: Element, style: str, nodeIsChild: bool = False) -> bool:
@@ -1788,7 +1946,7 @@ def styleInheritedByChild(node: Element, style: str, nodeIsChild: bool = False) 
     # If we have child nodes recursively check those
     if node.childNodes:
         for child in node.childNodes:
-            if styleInheritedByChild(child, style, True):
+            if styleInheritedByChild(child, style, True):  # type: ignore[arg-type]
                 return True
 
     # If the current element is a container element the inherited style is meaningless
@@ -1823,10 +1981,9 @@ def mayContainTextNodes(node: Element) -> bool:
     attributes removed.
     """
     # Cached result of a prior call?
-    try:
-        return node.mayContainTextNodes
-    except AttributeError:
-        pass
+    cached: bool | None = getattr(node, "mayContainTextNodes", None)
+    if cached is not None:
+        return cached
 
     result = True  # Default value
     # Comment, text and CDATA nodes don't have attributes and aren't containers
@@ -1842,13 +1999,13 @@ def mayContainTextNodes(node: Element) -> bool:
     elif node.nodeName in ["g", "clipPath", "marker", "mask", "pattern", "linearGradient", "radialGradient", "symbol"]:
         result = False
         for child in node.childNodes:
-            if mayContainTextNodes(child):
+            if mayContainTextNodes(child):  # type: ignore[arg-type]
                 result = True
     # Everything else should be considered a future SVG-version text element
     # at best, or an unknown element at worst. result will stay True.
 
     # Cache this result before returning it.
-    node.mayContainTextNodes = result
+    node.mayContainTextNodes = result  # type: ignore[attr-defined]
     return result
 
 
@@ -1883,7 +2040,13 @@ def _iter_attr_names(node: Element) -> list[str]:
     Replaces ``[node.attributes.item(i).nodeName for i in range(node.attributes.length)]``
     for readability.
     """
-    return [node.attributes.item(idx).nodeName for idx in range(node.attributes.length)]
+    attrs = node.attributes
+    names: list[str] = []
+    for idx in range(attrs.length):
+        item = attrs.item(idx)
+        if item is not None and item.nodeName is not None:
+            names.append(item.nodeName)
+    return names
 
 
 def taint(taintedSet: set[str], taintedAttribute: str) -> set[str]:
@@ -1896,7 +2059,7 @@ def taint(taintedSet: set[str], taintedAttribute: str) -> set[str]:
     return taintedSet
 
 
-def removeDefaultAttributeValue(node: Element, attribute: Any) -> int:
+def removeDefaultAttributeValue(node: Element, attribute: DefaultAttribute) -> int:
     """Remove a ``DefaultAttribute`` from *node* if it matches the default value.
 
     Returns 1 if removed, 0 otherwise.
@@ -1991,32 +2154,35 @@ def removeDefaultAttributeValues(node: Element, options: optparse.Values, tainte
 
     # Summarily get rid of default properties
     attributes = _iter_attr_names(node)
-    for attribute in attributes:
-        if attribute not in tainted:
-            if attribute in default_properties:
-                if node.getAttribute(attribute) == default_properties[attribute]:
-                    node.removeAttribute(attribute)
+    for attr_name in attributes:
+        if attr_name not in tainted:
+            if attr_name in default_properties:
+                if node.getAttribute(attr_name) == default_properties[attr_name]:
+                    node.removeAttribute(attr_name)
                     num += 1
                 else:
-                    tainted = taint(tainted, attribute)
+                    tainted = taint(tainted, attr_name)
     # Properties might also occur as styles, remove them too
     styles = _getStyle(node)
-    for attribute in list(styles):
-        if attribute not in tainted:
-            if attribute in default_properties:
-                if styles[attribute] == default_properties[attribute]:
-                    del styles[attribute]
+    for attr_name in list(styles):
+        if attr_name not in tainted:
+            if attr_name in default_properties:
+                if styles[attr_name] == default_properties[attr_name]:
+                    del styles[attr_name]
                     num += 1
                 else:
-                    tainted = taint(tainted, attribute)
+                    tainted = taint(tainted, attr_name)
     _setStyle(node, styles)
 
     # recurse for our child elements
     # Optimization: instead of tainted.copy() per child, snapshot once and
     # restore in-place after each child.  Saves N-1 set allocations per level.
+    # The type ignore is needed because childNodes returns a broad union;
+    # non-Element children are filtered by the early return at the top of
+    # removeDefaultAttributeValues().
     tainted_before_children = set(tainted)
     for child in node.childNodes:
-        num += removeDefaultAttributeValues(child, options, tainted)
+        num += removeDefaultAttributeValues(child, options, tainted)  # type: ignore[arg-type]
         tainted &= tainted_before_children
 
     return num
@@ -2097,13 +2263,12 @@ def convertColors(element: Element) -> int:
     """
     numBytes = 0
     # Explicit stack-based traversal replaces recursion for deep SVG documents.
-    stack = [element]
+    # Invariant: stack holds Elements only — non-Element children are filtered
+    # before pushing (see the loop tail), so no nodeType check is needed here.
+    stack: list[Element] = [element]
 
     while stack:
         node = stack.pop()
-
-        if node.nodeType != Node.ELEMENT_NODE:
-            continue
 
         # set up list of color attributes for each element type
         attrsToConvert: list[str] = []
@@ -2138,7 +2303,8 @@ def convertColors(element: Element) -> int:
 
         # push children onto the stack for processing
         for child in node.childNodes:
-            stack.append(child)
+            if child.nodeType == Node.ELEMENT_NODE:
+                stack.append(child)
 
     return numBytes
 
@@ -2502,7 +2668,7 @@ def clean_path(element: Element, options: optparse.Values, stats: ScourStats) ->
         # convert line segments into h,v where possible
         if cmd == "l":
             i = 0
-            lineTuples = []
+            lineTuples: list[tuple[str, list[Decimal]]] = []
             while i < len(data):
                 if data[i] == 0:
                     # vertical
@@ -2565,7 +2731,7 @@ def clean_path(element: Element, options: optparse.Values, stats: ScourStats) ->
                 if prevCmd == "s":
                     bez_ctl_pt = (prevData[-2] - prevData[-4], prevData[-1] - prevData[-3])
             i = 0
-            curveTuples = []
+            curveTuples: list[tuple[str, list[Decimal]]] = []
             while i < len(data):
                 # rotate by 180deg means negate both coordinates
                 # if the previous control point is equal then we can substitute a
@@ -2718,7 +2884,7 @@ def parseListOfPoints(s: str) -> list[Decimal]:
     # coordinate = sign? integer
     # comma-wsp: (wsp+ comma? wsp*) | (comma wsp*)
     ws_nums = RE_COMMA_WSP.split(s.strip())
-    nums = []
+    nums: list[str | Decimal] = []
 
     # also, if 100-100 is found, split it into two also
     #  <polygon points="100,-100,100-100,100-100-100,-100-100" />
@@ -2739,10 +2905,10 @@ def parseListOfPoints(s: str) -> list[Decimal]:
                 else:
                     # unless we accidentally split a number that was in scientific notation
                     # and had a negative exponent (500.00e-1)
-                    prev = ""
+                    prev: str | Decimal = ""
                     if len(nums):
                         prev = nums[len(nums) - 1]
-                    if prev and prev[len(prev) - 1] in ["e", "E"]:
+                    if isinstance(prev, str) and prev and prev[len(prev) - 1] in ["e", "E"]:
                         nums[len(nums) - 1] = prev + "-" + negcoords[j]
                     else:
                         nums.append("-" + negcoords[j])
@@ -2762,7 +2928,7 @@ def parseListOfPoints(s: str) -> list[Decimal]:
 
         i += 2
 
-    return nums
+    return [n for n in nums if isinstance(n, Decimal)]
 
 
 def clean_polygon(elem: Element, options: optparse.Values) -> int:
@@ -2811,17 +2977,24 @@ def flags(cmd: str, data: list[Decimal]) -> list[int]:
     return []
 
 
-def serializePath(pathObj: list[tuple[str, list[Decimal]]], options: optparse.Values) -> str:
-    """Serialize optimized path data back to a ``d`` attribute string."""
+def serializePath(pathObj: PathData, options: optparse.Values) -> str:
+    """Serialize optimized path data back to a ``d`` attribute string.
+
+    Pre-allocates a list with ``2 * len(pathObj)`` slots and appends the command
+    and its coordinates separately. This avoids the per-iteration intermediate
+    ``cmd + scourCoordinates(...)`` concatenation that the previous generator
+    form created.
+    """
     # elliptical arc commands must have comma/wsp separating the coordinates
     # this fixes an issue outlined in Fix https://bugs.launchpad.net/scour/+bug/412754
-    return "".join(
-        cmd + scourCoordinates(data, options, control_points=controlPoints(cmd, data), flags=flags(cmd, data))
-        for cmd, data in pathObj
-    )
+    parts: list[str] = []
+    for cmd, data in pathObj:
+        parts.append(cmd)
+        parts.append(scourCoordinates(data, options, control_points=controlPoints(cmd, data), flags=flags(cmd, data)))
+    return "".join(parts)
 
 
-def serializeTransform(transformObj: list[tuple[str, list[Decimal]]]) -> str:
+def serializeTransform(transformObj: TransformData) -> str:
     """Serialize optimized transform data back to a ``transform`` attribute string."""
     return " ".join(
         command + "(" + " ".join(scourUnitlessLength(number) for number in numbers) + ")"
@@ -2892,19 +3065,27 @@ def scourCoordinates(
 
 def scourLength(length: str) -> str:
     """Reduce precision and strip trailing zeros from a length value (may include units)."""
-    length = SVGLength(length)
+    parsed = SVGLength(length)
 
-    return scourUnitlessLength(length.value) + Unit.str(length.units)
+    return scourUnitlessLength(parsed.value) + Unit.str(parsed.units)
 
 
 def scourUnitlessLength(
-    length: Decimal | str, renderer_workaround: bool = False, is_control_point: bool = False
+    length: Decimal | float | str, renderer_workaround: bool = False, is_control_point: bool = False
 ) -> str:
-    """
-    Scours the numeric part of a length only. Does not accept units.
+    """Scour the numeric part of a length only. Does not accept units.
 
     This is faster than scourLength on elements guaranteed not to
     contain units.
+
+    Args:
+        length: Numeric length to round. Decimal is preferred (no parse
+            overhead); float/int are converted via ``Decimal(str(length))`` to
+            avoid binary-float surprises; str is parsed by Decimal directly.
+        renderer_workaround: When True, avoid the ``.5e1`` form some renderers
+            mishandle.
+        is_control_point: When True, use the tighter ``ctx_c`` precision
+            (``options.cdigits``) instead of standard ``ctx``.
     """
     if not isinstance(length, Decimal):
         length = getcontext().create_decimal(str(length))
@@ -2953,13 +3134,32 @@ def scourUnitlessLength(
 
 
 def reducePrecision(element: Element) -> int:
-    """Reduce decimal precision of style-related length attributes (opacity, stroke-width, etc.).
+    """Reduce decimal precision of style-related length attributes.
 
-    Returns the number of bytes saved after performing these reductions.
+    Walks the element tree and for each numeric style property (opacity,
+    stroke-width, font-size, etc.) re-renders the value with the configured
+    precision via :func:`scourLength`. The replacement is applied only when
+    it shortens the string — never for the sake of "consistent precision".
+
+    Both XML attributes and CSS style declarations are processed, since SVG
+    permits the same property in either location and the optimizer aims to
+    shrink both. ``Unit.INVALID`` results are skipped to avoid mangling
+    keywords like ``inherit``.
+
+    Args:
+        element: Subtree root. The function recurses into element children
+            (text/comment nodes are ignored).
+
+    Returns:
+        Total bytes saved across all attribute and style edits in the
+        subtree.
     """
     num = 0
 
     styles = _getStyle(element)
+    # Properties that take an SVG <length> or <number>. ``font-weight`` is
+    # NOT in this list — it accepts only enumerated/integer values, which
+    # scourLength would corrupt.
     for lengthAttr in [
         "opacity",
         "flood-opacity",
@@ -2978,12 +3178,15 @@ def reducePrecision(element: Element) -> int:
         val = element.getAttribute(lengthAttr)
         if val:
             valLen = SVGLength(val)
-            if valLen.units != Unit.INVALID:  # not an absolute/relative size or inherit, can be % though
+            # INVALID covers keywords like "inherit"; "%" is intentionally
+            # allowed because scourLength preserves the unit.
+            if valLen.units != Unit.INVALID:
                 newVal = scourLength(val)
                 if len(newVal) < len(val):
                     num += len(val) - len(newVal)
                     element.setAttribute(lengthAttr, newVal)
-        # repeat for attributes hidden in styles
+        # Same property may also live inside a ``style="…"`` declaration.
+        # Process both so we don't leave one form un-optimized.
         if lengthAttr in styles:
             val = styles[lengthAttr]
             valLen = SVGLength(val)
@@ -3033,7 +3236,7 @@ def optimizeAngle(angle: Decimal) -> Decimal:
     return angle
 
 
-def optimizeTransform(transform: list[tuple[str, list[Decimal]]]) -> None:
+def optimizeTransform(transform: TransformData) -> None:
     """Optimize a parsed transform list in-place (fold identity ops, simplify matrices).
 
     Mutates *transform* to produce the shortest equivalent representation.
@@ -3275,19 +3478,29 @@ def optimizeTransforms(element: Element, options: optparse.Values) -> int:
 # =============================================================================
 
 
-def remove_comments(element: Element, stats: ScourStats) -> None:
-    """Remove XML comment nodes from *element* and its children."""
+def remove_comments(element: Document | Element, stats: ScourStats) -> None:
+    """Remove XML comment nodes from *element* and its children.
+
+    The parameter is annotated as ``Document | Element`` to accommodate the
+    public entry point (``scourString`` passes the ``Document``). The recursion
+    descends through arbitrary node types via ``childNodes`` (returning a broad
+    union); the runtime ``isinstance`` dispatch ensures every node type is
+    handled safely, so the recursive call is structurally safe even if mypy
+    cannot prove it.
+    """
 
     if isinstance(element, xml.dom.minidom.Comment):
         stats.num_bytes_saved_in_comments += len(element.data)
         stats.num_comments_removed += 1
-        element.parentNode.removeChild(element)
+        parent = element.parentNode
+        assert parent is not None
+        parent.removeChild(element)
     else:
         for subelement in element.childNodes[:]:
-            remove_comments(subelement, stats)
+            remove_comments(subelement, stats)  # type: ignore[arg-type]
 
 
-def embed_rasters(element: Element, options: optparse.Values) -> None:
+def embed_rasters(element: Element, options: optparse.Values) -> int:
     """Convert external raster image references to inline base64 data URIs."""
     import base64
 
@@ -3425,6 +3638,8 @@ def remapNamespacePrefix(node: Element, oldprefix: str, newprefix: str) -> None:
         namespace = node.namespaceURI
         doc = node.ownerDocument
         parent = node.parentNode
+        assert doc is not None
+        assert parent is not None
 
         # create a replacement node
         if newprefix != "":  # pragma: no cover — always called with newprefix=""
@@ -3436,11 +3651,12 @@ def remapNamespacePrefix(node: Element, oldprefix: str, newprefix: str) -> None:
         attrList = node.attributes
         for i in range(attrList.length):
             attr = attrList.item(i)
-            newNode.setAttributeNS(attr.namespaceURI, attr.name, attr.nodeValue)
+            assert attr is not None
+            newNode.setAttributeNS(attr.namespaceURI, attr.name, attr.nodeValue or "")  # type: ignore[attr-defined]
 
         # clone and add all the child nodes
         for child in node.childNodes:
-            newNode.appendChild(child.cloneNode(True))
+            newNode.appendChild(child.cloneNode(True))  # type: ignore[type-var]
 
         # replace old node with new node
         parent.replaceChild(newNode, node)
@@ -3449,7 +3665,7 @@ def remapNamespacePrefix(node: Element, oldprefix: str, newprefix: str) -> None:
 
     # now do all child nodes
     for child in node.childNodes:
-        remapNamespacePrefix(child, oldprefix, newprefix)
+        remapNamespacePrefix(child, oldprefix, newprefix)  # type: ignore[arg-type]
 
 
 # =============================================================================
@@ -3488,14 +3704,14 @@ def choose_quote_character(value: str) -> tuple[str, dict[str, str]]:
 
 
 # use custom order for known attributes and alphabetical order for the rest
-def _attribute_sort_key_function(attribute: Any) -> tuple[int, str]:
+def _attribute_sort_key_function(attribute: Attr) -> tuple[int, str]:
     """Sort key: known SVG attributes first (by canonical order), then alphabetical."""
     name = attribute.name
     order_value = KNOWN_ATTRS_ORDER_BY_NAME[name]
     return order_value, name
 
 
-def attributes_ordered_for_output(element: Element) -> list[Any]:
+def attributes_ordered_for_output(element: Element) -> list[Attr]:
     """Return the element's attributes sorted in canonical SVG output order."""
     if not element.hasAttributes():
         return []
@@ -3504,7 +3720,11 @@ def attributes_ordered_for_output(element: Element) -> list[Any]:
     # call it at most once per attribute.
     # - it would be many times faster to use `attribute.values()` but sadly
     #   that is an "experimental" interface.
-    return sorted((attribute.item(i) for i in range(attribute.length)), key=_attribute_sort_key_function)
+    items = [attribute.item(i) for i in range(attribute.length)]
+    # minidom's NamedNodeMap.item returns Node | None; in practice only Attr
+    # nodes are stored on element.attributes. Filter Nones and cast for mypy.
+    attrs: list[Attr] = [a for a in items if a is not None]  # type: ignore[misc]
+    return sorted(attrs, key=_attribute_sort_key_function)
 
 
 def serializeXML(
@@ -3636,7 +3856,10 @@ def serializeXML(
                         text_content = text_content.strip()
                 outParts.append(make_well_formed(text_content))
             # CDATA node
-            elif child.nodeType == Node.CDATA_SECTION_NODE:
+            # mypy's xml.dom.minidom stubs do not include CDATASection in the
+            # childNodes union, but the runtime can produce it (parseString
+            # preserves <![CDATA[…]]> blocks unchanged).
+            elif child.nodeType == Node.CDATA_SECTION_NODE:  # type: ignore[comparison-overlap]
                 outParts.extend(["<![CDATA[", child.nodeValue, "]]>"])
             # Comment node
             elif child.nodeType == Node.COMMENT_NODE:
@@ -3658,7 +3881,7 @@ def serializeXML(
 # =============================================================================
 
 
-def scourString(in_string: str, options: optparse.Values | None = None, stats: ScourStats | None = None) -> str:
+def scourString(in_string: str | bytes, options: optparse.Values | None = None, stats: ScourStats | None = None) -> str:
     """Optimize an SVG string and return the result.
 
     Parses *in_string* as XML, runs the full optimization pipeline
@@ -3702,7 +3925,9 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
         optionally prepending the XML prolog.
 
     Args:
-        in_string: Raw SVG/XML string to optimize.
+        in_string: Raw SVG/XML to optimize. Accepts ``str`` (assumed Unicode)
+            or ``bytes`` (the encoding is detected from the XML declaration,
+            so non-UTF-8 inputs like ISO-8859-15 are handled correctly).
         options: Optimizer options from :func:`parse_args`. ``None`` uses
             defaults via :func:`sanitizeOptions`.
         stats: Optional :class:`ScourStats` to collect metrics. A new
@@ -3739,6 +3964,10 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
     _precision.ctx_c = Context(prec=options.cdigits)
 
     doc = xml.dom.minidom.parseString(in_string)
+    # parseString always produces a documentElement; bind to a local for clarity
+    # and to give mypy a non-Optional handle for the rest of the pipeline.
+    root = doc.documentElement
+    assert root is not None, "parseString returned a document with no root element"
 
     # determine number of flowRoot elements in input document
     # flowRoot elements don't render at all on current browsers (04/2016)
@@ -3757,24 +3986,28 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
 
     # remove unneeded namespaced elements/attributes added by common editors
     if options.keep_editor_data is False:
-        stats.num_elements_removed += removeNamespacedElements(doc.documentElement, unwanted_ns)
-        stats.num_attributes_removed += removeNamespacedAttributes(doc.documentElement, unwanted_ns)
+        stats.num_elements_removed += removeNamespacedElements(root, unwanted_ns)
+        stats.num_attributes_removed += removeNamespacedAttributes(root, unwanted_ns)
 
         # remove the xmlns: declarations now
-        xmlnsDeclsToRemove = []
-        attrList = doc.documentElement.attributes
+        xmlnsDeclsToRemove: list[str] = []
+        attrList = root.attributes
         for index in range(attrList.length):
-            if attrList.item(index).nodeValue in unwanted_ns:
-                xmlnsDeclsToRemove.append(attrList.item(index).nodeName)
+            attr_node = attrList.item(index)
+            assert attr_node is not None
+            if attr_node.nodeValue in unwanted_ns:
+                attr_name = attr_node.nodeName
+                assert attr_name is not None
+                xmlnsDeclsToRemove.append(attr_name)
 
         for attr in xmlnsDeclsToRemove:
-            doc.documentElement.removeAttribute(attr)
+            root.removeAttribute(attr)
         stats.num_attributes_removed += len(xmlnsDeclsToRemove)
 
     # ensure namespace for SVG is declared
     # TODO: what if the default namespace is something else (i.e. some valid namespace)?
-    if doc.documentElement.getAttribute("xmlns") != "http://www.w3.org/2000/svg":
-        doc.documentElement.setAttribute("xmlns", "http://www.w3.org/2000/svg")
+    if root.getAttribute("xmlns") != "http://www.w3.org/2000/svg":
+        root.setAttribute("xmlns", "http://www.w3.org/2000/svg")
         # TODO: throw error or warning?
 
     # check for redundant and unused SVG namespace declarations
@@ -3789,13 +4022,15 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
                         return False
         return True
 
-    attrList = doc.documentElement.attributes
+    attrList = root.attributes
     xmlnsDeclsToRemove = []
-    redundantPrefixes = []
+    redundantPrefixes: list[str] = []
     for i in range(attrList.length):
-        attr = attrList.item(i)
-        name = attr.nodeName
-        val = attr.nodeValue
+        attr_node = attrList.item(i)
+        assert attr_node is not None
+        name = attr_node.nodeName
+        assert name is not None
+        val = attr_node.nodeValue or ""
         if name.startswith("xmlns:"):
             if val == "http://www.w3.org/2000/svg":
                 redundantPrefixes.append(name[6:])
@@ -3804,25 +4039,31 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
                 xmlnsDeclsToRemove.append(name)
 
     for attrName in xmlnsDeclsToRemove:
-        doc.documentElement.removeAttribute(attrName)
+        root.removeAttribute(attrName)
     stats.num_attributes_removed += len(xmlnsDeclsToRemove)
 
     for prefix in redundantPrefixes:
-        remapNamespacePrefix(doc.documentElement, prefix, "")
+        remapNamespacePrefix(root, prefix, "")
+
+    # remapNamespacePrefix may have replaced the root element via parent.replaceChild,
+    # so refresh the local handle before continuing.
+    if redundantPrefixes:
+        root = doc.documentElement
+        assert root is not None
 
     if options.strip_comments:
         remove_comments(doc, stats)
 
-    if options.strip_xml_space_attribute and doc.documentElement.hasAttribute("xml:space"):
-        doc.documentElement.removeAttribute("xml:space")
+    if options.strip_xml_space_attribute and root.hasAttribute("xml:space"):
+        root.removeAttribute("xml:space")
         stats.num_attributes_removed += 1
 
     # repair style (remove unnecessary style properties and change them into XML attributes)
-    stats.num_style_properties_fixed = repairStyle(doc.documentElement, options)
+    stats.num_style_properties_fixed = repairStyle(root, options)
 
     # convert colors to #RRGGBB format
     if options.simple_colors:
-        stats.num_bytes_saved_in_colors = convertColors(doc.documentElement)
+        stats.num_bytes_saved_in_colors = convertColors(root)
 
     # remove unreferenced gradients/patterns outside of defs
     # and most unreferenced elements inside of defs
@@ -3832,7 +4073,7 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
     # remove empty defs, metadata, g
     # NOTE: these elements will be removed if they just have whitespace-only text nodes
     for tag in ["defs", "title", "desc", "metadata", "g"]:
-        for elem in doc.documentElement.getElementsByTagName(tag):
+        for elem in root.getElementsByTagName(tag):
             removeElem = not elem.hasChildNodes()
             if removeElem is False:
                 for child in elem.childNodes:
@@ -3843,11 +4084,13 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
                 else:
                     removeElem = True
             if removeElem:
-                elem.parentNode.removeChild(elem)
+                parent = elem.parentNode
+                assert parent is not None
+                parent.removeChild(elem)
                 stats.num_elements_removed += 1
 
     if options.strip_ids:
-        referencedIDs = findReferencedElements(doc.documentElement)
+        referencedIDs = findReferencedElements(root)
         identifiedElements = unprotected_ids(doc, options)
         stats.num_ids_removed += remove_unreferenced_ids(referencedIDs, identifiedElements)
 
@@ -3862,42 +4105,46 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
     stats.num_elements_removed += removeDuplicateGradients(doc)
 
     if options.group_collapse:
-        stats.num_elements_removed += mergeSiblingGroupsWithCommonAttributes(doc.documentElement)
+        stats.num_elements_removed += mergeSiblingGroupsWithCommonAttributes(root)
     # create <g> elements if there are runs of elements with the same attributes.
     # this MUST be before moveCommonAttributesToParentGroup.
     if options.group_create:
-        create_groups_for_common_attributes(doc.documentElement, stats)
+        create_groups_for_common_attributes(root, stats)
 
     # move common attributes to parent group
     # NOTE: the if the <svg> element's immediate children
     # all have the same value for an attribute, it must not
     # get moved to the <svg> element. The <svg> element
     # doesn't accept fill=, stroke= etc.!
-    referencedIds = findReferencedElements(doc.documentElement)
-    for child in doc.documentElement.childNodes:
-        stats.num_attributes_removed += moveCommonAttributesToParentGroup(child, referencedIds)
+    referencedIds = findReferencedElements(root)
+    for child in root.childNodes:
+        # childNodes returns a broad union; moveCommonAttributesToParentGroup
+        # filters non-Element nodes via its early-return guard.
+        stats.num_attributes_removed += moveCommonAttributesToParentGroup(child, referencedIds)  # type: ignore[arg-type]
 
     # remove unused attributes from parent
-    stats.num_attributes_removed += removeUnusedAttributesOnParent(doc.documentElement)
+    stats.num_attributes_removed += removeUnusedAttributesOnParent(root)
 
     # Collapse groups LAST, because we've created groups. If done before
     # moveAttributesToParentGroup, empty <g>'s may remain.
     if options.group_collapse:
-        while remove_nested_groups(doc.documentElement, stats) > 0:
+        while remove_nested_groups(root, stats) > 0:
             pass
 
     # remove unnecessary closing point of polygons and scour points
-    for polygon in doc.documentElement.getElementsByTagName("polygon"):
+    for polygon in root.getElementsByTagName("polygon"):
         stats.num_points_removed_from_polygon += clean_polygon(polygon, options)
 
     # scour points of polyline
-    for polyline in doc.documentElement.getElementsByTagName("polyline"):
+    for polyline in root.getElementsByTagName("polyline"):
         cleanPolyline(polyline, options)
 
     # clean path data
-    for elem in doc.documentElement.getElementsByTagName("path"):
+    for elem in root.getElementsByTagName("path"):
         if elem.getAttribute("d") == "":
-            elem.parentNode.removeChild(elem)
+            parent = elem.parentNode
+            assert parent is not None
+            parent.removeChild(elem)
         else:
             clean_path(elem, options, stats)
 
@@ -3943,36 +4190,36 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
             for attr in _LENGTH_SCOUR_ATTRS:
                 if elem.getAttribute(attr):
                     elem.setAttribute(attr, scourLength(elem.getAttribute(attr)))
-    viewBox = doc.documentElement.getAttribute("viewBox")
+    viewBox = root.getAttribute("viewBox")
     if viewBox:
         lengths = RE_COMMA_WSP.split(viewBox)
         lengths = [scourUnitlessLength(length) for length in lengths]
-        doc.documentElement.setAttribute("viewBox", " ".join(lengths))
+        root.setAttribute("viewBox", " ".join(lengths))
 
     # more length scouring in this function
-    stats.num_bytes_saved_in_lengths = reducePrecision(doc.documentElement)
+    stats.num_bytes_saved_in_lengths = reducePrecision(root)
 
     # remove default values of attributes
-    stats.num_attributes_removed += removeDefaultAttributeValues(doc.documentElement, options)
+    stats.num_attributes_removed += removeDefaultAttributeValues(root, options)
 
     # reduce the length of transformation attributes
-    stats.num_bytes_saved_in_transforms = optimizeTransforms(doc.documentElement, options)
+    stats.num_bytes_saved_in_transforms = optimizeTransforms(root, options)
 
     # convert rasters references to base64-encoded strings
     if options.embed_rasters:
-        for elem in doc.documentElement.getElementsByTagName("image"):
+        for elem in root.getElementsByTagName("image"):
             stats.num_rasters_embedded += embed_rasters(elem, options)
 
     # properly size the SVG document (ideally width/height should be 100% with a viewBox)
     if options.enable_viewboxing:
-        properlySizeDoc(doc.documentElement, options)
+        properlySizeDoc(root, options)
 
     # output the document as a pretty string with a single space for indent
     # NOTE: removed pretty printing because of this problem:
     # http://ronrothman.com/public/leftbraned/xml-dom-minidom-toprettyxml-and-silly-whitespace/
     # rolled our own serialize function here to save on space, put id first, customize indentation, etc
-    #  out_string = doc.documentElement.toprettyxml(' ')
-    out_string = serializeXML(doc.documentElement, options) + "\n"
+    #  out_string = root.toprettyxml(' ')
+    out_string = serializeXML(root, options) + "\n"
 
     # return the string with its XML prolog and surrounding comments
     if options.strip_xml_prolog is False:
@@ -3983,11 +4230,11 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
     else:
         total_output = ""
 
-    for child in doc.childNodes:
-        if child.nodeType == Node.ELEMENT_NODE:
+    for doc_child in doc.childNodes:
+        if doc_child.nodeType == Node.ELEMENT_NODE:
             total_output += out_string
         else:  # doctypes, entities, comments
-            total_output += child.toxml() + "\n"
+            total_output += doc_child.toxml() + "\n"
 
     return total_output
 
@@ -4000,9 +4247,11 @@ def scourXmlFile(filename: str, options: optparse.Values | None = None, stats: S
     options.ensure_value("infilename", filename)
 
     # open the file and scour it
+    # Read as bytes so that scourString can let xml.dom.minidom.parseString
+    # detect the encoding from the XML declaration (handles e.g. ISO-8859-15).
     with open(filename, "rb") as f:
-        in_string = f.read()
-    out_string = scourString(in_string, options, stats=stats)
+        in_bytes = f.read()
+    out_string = scourString(in_bytes, options, stats=stats)
 
     # prepare the output xml.dom.minidom object
     doc = xml.dom.minidom.parseString(out_string.encode("utf-8"))
@@ -4350,7 +4599,7 @@ def maybe_gziped_file(filename: str, mode: str = "r") -> IO[Any]:
     if os.path.splitext(filename)[1].lower() in (".svgz", ".gz"):
         import gzip
 
-        return gzip.GzipFile(filename, mode)
+        return gzip.GzipFile(filename, mode)  # type: ignore[return-value]
     return open(filename, mode)
 
 
@@ -4382,11 +4631,24 @@ def getInOut(options: optparse.Values) -> tuple[IO[Any], IO[Any]]:
         # redirect informational output to stderr when SVG is output to stdout
         options.stdout = sys.stderr
 
-    return [infile, outfile]
+    return (infile, outfile)
 
 
 def generate_report(stats: ScourStats) -> str:
-    """Format optimization statistics into a human-readable report string."""
+    """Format optimization statistics into a human-readable report string.
+
+    Each metric occupies one line, two-space indented, in the order returned
+    by :class:`ScourStats`. Output uses :data:`os.linesep` so the report
+    matches the host platform's newline convention when piped to a file.
+
+    Args:
+        stats: Populated statistics object — typically the one filled in by
+            :func:`scourString` during the run that just finished.
+
+    Returns:
+        Multi-line summary suitable for printing to ``stderr`` after the
+        optimization completes.
+    """
     return (
         "  Number of elements removed: "
         + str(stats.num_elements_removed)

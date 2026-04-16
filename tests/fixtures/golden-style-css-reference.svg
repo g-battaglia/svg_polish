@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg">
+ <defs>
+  <linearGradient id="g1">
+   <stop stop-color="red" offset="0"/>
+   <stop stop-color="blue" offset="1"/>
+  </linearGradient>
+  <linearGradient id="g2">
+   <stop stop-color="green" offset="0"/>
+   <stop stop-color="#ff0" offset="1"/>
+  </linearGradient>
+ </defs>
+ <style type="text/css"><![CDATA[
+	rect {
+		stroke: red;
+		stroke-width: 10;
+		fill:url(#g1)
+	}
+]]></style>
+ <style type="text/css">.circ { fill: none; stroke: url("#g2"); stroke-width: 15 }</style>
+ <rect width="300" height="300"/>
+ <circle class="circ" cx="350" cy="350" r="40"/>
+</svg>

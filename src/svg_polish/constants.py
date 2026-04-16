@@ -20,9 +20,14 @@ Contents:
 from __future__ import annotations
 
 import re
-from collections import defaultdict, namedtuple
+from collections import defaultdict
+from collections.abc import Callable
+from typing import TYPE_CHECKING, NamedTuple
 
 from svg_polish import __version__  # noqa: I001 — must import before using __version__ below
+
+if TYPE_CHECKING:
+    from xml.dom.minidom import Element
 
 # =============================================================================
 # Application Identity and Version
@@ -84,6 +89,24 @@ class Unit:
     Provides bidirectional mapping between unit strings (``"px"``, ``"%"``,
     ``"em"``, etc.) and their integer constants.  Used by :class:`SVGLength`
     to parse and serialize length values.
+
+    Also used directly in :data:`default_attributes_per_element` to specify
+    the unit type for default attribute values (e.g. ``Unit.PCT`` for ``%``).
+
+    Attributes:
+        INVALID: Sentinel value for unknown/unsupported unit strings.
+        NONE: No unit (bare number).
+        PCT: Percentage (``%``).
+        PX: Pixels (``px``).
+        PT: Points (``pt``).
+        PC: Picas (``pc``).
+        EM: Em (``em``).
+        EX: Ex (``ex``).
+        CM: Centimeters (``cm``).
+        MM: Millimeters (``mm``).
+        IN: Inches (``in``).
+        s2u: ``dict[str, int]`` — unit string → integer constant.
+        u2s: ``dict[int, str]`` — integer constant → unit string.
     """
 
     INVALID = -1
@@ -577,15 +600,36 @@ TEXT_CONTENT_ELEMENTS: frozenset[str] = frozenset(
 # Default Attribute Specification Table
 # =============================================================================
 
+
 # Named tuple representing a default attribute rule.
 # Fields:
-#   name (str):       attribute name
-#   value:            default value (str for text, int/float for numeric)
-#   units (int):      expected Unit constant (None for text values)
-#   elements (list):  element tag names this rule applies to (None = all)
-#   conditions:       optional callable(node) -> bool; rule applies only when True
-DefaultAttribute = namedtuple("DefaultAttribute", ["name", "value", "units", "elements", "conditions"])
-DefaultAttribute.__new__.__defaults__ = (None,) * len(DefaultAttribute._fields)
+class DefaultAttribute(NamedTuple):
+    """Description of one removable default attribute (entry in ``default_attributes``).
+
+    The optimizer compares each element's attributes against this table; when
+    an attribute matches the recorded default value (and any optional
+    *conditions*), it is safely removed because the renderer will substitute
+    the same default.
+
+    Attributes:
+        name: Attribute name (e.g. ``"fill-opacity"``, ``"stroke-width"``).
+        value: Expected default — ``str`` for text values, ``int``/``float``
+            for numeric. ``None`` matches any value (only the *conditions*
+            then decide).
+        units: Required unit (a :class:`~svg_polish.constants.Unit` constant);
+            ``None`` for text-valued attributes.
+        elements: Restrict the rule to these element tag names; ``None``
+            applies it to every element.
+        conditions: Optional ``(element) -> bool`` predicate evaluated at
+            removal time. Returning ``True`` allows the removal to proceed.
+    """
+
+    name: str
+    value: str | int | float | None = None
+    units: int | None = None
+    elements: list[str] | None = None
+    conditions: Callable[[Element], bool] | None = None
+
 
 # Table of SVG attributes with known default values that can be safely removed.
 # Used by removeDefaultAttributeValues() and removeDefaultAttributeValue().
@@ -846,7 +890,7 @@ for default_attribute in default_attributes:
 # to avoid circular imports from types.py.
 #
 # TODO: Maybe update with full list from https://www.w3.org/TR/SVG/attindex.html
-KNOWN_ATTRS: tuple[list[str], ...] = (
+KNOWN_ATTRS: list[str] = (
     [
         "id",
         "xml:id",

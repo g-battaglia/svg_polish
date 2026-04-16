@@ -15,10 +15,12 @@ import pytest
 
 from svg_polish.optimizer import (
     Unit,
+    findReferencedElements,
     generateDefaultOptions,
     make_well_formed,
     maybe_gziped_file,
     parse_args,
+    removeDuplicateGradients,
     sanitizeOptions,
     scourString,
     scourXmlFile,
@@ -300,6 +302,27 @@ class TestDedupGradients:
         result = _scour(svg)
         # One of the duplicates should have been removed; both rects reference the same gradient
         assert "stop" in result
+
+    def test_dedup_with_explicit_referenced_ids(self):
+        """removeDuplicateGradients accepts a pre-built referencedIDs map."""
+        import xml.dom.minidom
+
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg">'
+            "<defs>"
+            '<linearGradient id="dupA"><stop offset="0" stop-color="red"/></linearGradient>'
+            '<linearGradient id="dupB"><stop offset="0" stop-color="red"/></linearGradient>'
+            "</defs>"
+            '<rect fill="url(#dupA)"/><rect fill="url(#dupB)"/>'
+            "</svg>"
+        )
+        doc = xml.dom.minidom.parseString(svg)
+        root = doc.documentElement
+        assert root is not None
+        refs = findReferencedElements(root)
+        # Pass the pre-built map to exercise the else branch that reuses it.
+        removed = removeDuplicateGradients(doc, referencedIDs=refs)
+        assert removed >= 1
 
     def test_three_duplicate_gradients(self):
         svg = (
@@ -1177,6 +1200,35 @@ class TestAdditionalEdgeCases:
         stats = ScourStats()
         scourString(svg, options, stats)
         # Just verify it doesn't crash
+
+    def test_replace_url_refs_helper(self):
+        """Exercise the _replace_url_refs helper for url(#id) replacement."""
+        from svg_polish.optimizer import _replace_url_refs
+
+        # Unquoted form
+        result, count = _replace_url_refs("fill: url(#grad1)", "grad1", "g")
+        assert count == 1
+        assert result == "fill: url(#g)"
+
+        # Single-quoted form
+        result, count = _replace_url_refs("fill: url('#grad1')", "grad1", "g")
+        assert count == 1
+        assert result == "fill: url(#g)"
+
+        # Double-quoted form
+        result, count = _replace_url_refs('fill: url("#grad1")', "grad1", "g")
+        assert count == 1
+        assert result == "fill: url(#g)"
+
+        # No match
+        result, count = _replace_url_refs("fill: red", "grad1", "g")
+        assert count == 0
+        assert result == "fill: red"
+
+        # Multiple matches
+        result, count = _replace_url_refs("fill: url(#a); stroke: url(#a)", "a", "b")
+        assert count == 2
+        assert result == "fill: url(#b); stroke: url(#b)"
 
     def test_group_collapse_nested(self):
         # group_collapse is enabled by default; verify nested groups are collapsed

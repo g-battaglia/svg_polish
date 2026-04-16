@@ -54,6 +54,7 @@ Examples::
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from decimal import Decimal
 from functools import partial
 from typing import Any, Generator
@@ -63,12 +64,20 @@ class _EOF:
     """Sentinel for end of input."""
 
     def __repr__(self) -> str:
+        """Return ``"EOF"`` so error messages mention end-of-input clearly."""
         return "EOF"
 
 
 EOF = _EOF()
 
 Token = tuple[str | _EOF, str | None]
+
+# Each parser rule takes a "next token" thunk plus the current token and
+# returns the parsed value(s) together with the token that follows it.
+NextTokenFn = Callable[[], Token]
+TransformTuple = tuple[str, list[Decimal]]
+RuleResult = tuple[TransformTuple, Token]
+NumbersResult = tuple[list[Decimal], Token]
 
 # Lexer token definitions: each entry is (type_name, regex_pattern).
 # "float" is listed before "int" so that e.g. "3.14" is matched as one float
@@ -91,6 +100,15 @@ class Lexer:
     """
 
     def __init__(self, lexicon: list[tuple[str, str]]) -> None:
+        """Compile *lexicon* into a single combined regex.
+
+        Lexicon order matters (first match wins): floats must precede ints,
+        commands must precede ``coordstart``/``coordend``. The lexicon
+        defined in this module is the canonical SVG ``transform`` lexicon.
+
+        Args:
+            lexicon: Ordered list of ``(token_name, regex_pattern)`` pairs.
+        """
         self.lexicon = lexicon
         # Build a single combined regex with named groups: (?P<float>...)|(?P<int>...)|…
         parts = []
@@ -133,6 +151,17 @@ class SVGTransformationParser:
     """
 
     def __init__(self, lexer: Lexer = svg_lexer) -> None:
+        """Wire the parser to a *lexer* and build the transform dispatch table.
+
+        Defaults to :data:`svg_lexer` (the module-level lexer pre-built from
+        the SVG transform lexicon). The dispatch table maps each of the six
+        SVG transform functions (``translate``, ``scale``, ``rotate``,
+        ``skewX``, ``skewY``, ``matrix``) to its argument-arity rule.
+
+        Args:
+            lexer: Token producer. Must yield tokens matching the transform
+                lexicon and a final ``(EOF, None)`` sentinel.
+        """
         self.lexer = lexer
 
         # Dispatch table: maps each transform type name to the rule that
@@ -174,11 +203,12 @@ class SVGTransformationParser:
             commands.append(command)
         return commands
 
-    def rule_svg_transform(self, next_val_fn, token):
+    def rule_svg_transform(self, next_val_fn: NextTokenFn, token: Token) -> RuleResult:
         """Consume a single transform function: ``type(args)``."""
         if token[0] != "command":
             raise SyntaxError("expecting a transformation type; got %r" % (token,))
         command = token[1]
+        assert command is not None
         rule = self.command_dispatch[command]
         token = next_val_fn()
         if token[0] != "coordstart":
@@ -189,22 +219,22 @@ class SVGTransformationParser:
         token = next_val_fn()
         return (command, numbers), token
 
-    def rule_1or2numbers(self, next_val_fn, token):
+    def rule_1or2numbers(self, next_val_fn: NextTokenFn, token: Token) -> NumbersResult:
         """Consume 1 required number and 1 optional number.
 
         Used by ``translate`` and ``scale`` where the second argument defaults
         to the first if omitted.
         """
-        numbers = []
+        numbers: list[Decimal] = []
         token = next_val_fn()
         number, token = self.rule_number(next_val_fn, token)
         numbers.append(number)
-        number, token = self.rule_optional_number(next_val_fn, token)
-        if number is not None:
-            numbers.append(number)
+        opt_number, token = self.rule_optional_number(next_val_fn, token)
+        if opt_number is not None:
+            numbers.append(opt_number)
         return numbers, token
 
-    def rule_1number(self, next_val_fn, token):
+    def rule_1number(self, next_val_fn: NextTokenFn, token: Token) -> NumbersResult:
         """Consume exactly 1 required number.
 
         Used by ``skewX`` and ``skewY``.
@@ -214,45 +244,46 @@ class SVGTransformationParser:
         numbers = [number]
         return numbers, token
 
-    def rule_1or3numbers(self, next_val_fn, token):
+    def rule_1or3numbers(self, next_val_fn: NextTokenFn, token: Token) -> NumbersResult:
         """Consume 1 required number and optionally 2 more.
 
         Used by ``rotate``: ``rotate(angle)`` or ``rotate(angle, cx, cy)``.
         If the optional second number is present, a third is required.
         """
-        numbers = []
+        numbers: list[Decimal] = []
         token = next_val_fn()
         number, token = self.rule_number(next_val_fn, token)
         numbers.append(number)
-        number, token = self.rule_optional_number(next_val_fn, token)
-        if number is not None:
-            numbers.append(number)
+        opt_number, token = self.rule_optional_number(next_val_fn, token)
+        if opt_number is not None:
+            numbers.append(opt_number)
             number, token = self.rule_number(next_val_fn, token)
             numbers.append(number)
         return numbers, token
 
-    def rule_6numbers(self, next_val_fn, token):
+    def rule_6numbers(self, next_val_fn: NextTokenFn, token: Token) -> NumbersResult:
         """Consume exactly 6 required numbers.
 
         Used by ``matrix(a, b, c, d, e, f)`` representing a 2×3 affine matrix.
         """
-        numbers = []
+        numbers: list[Decimal] = []
         token = next_val_fn()
         for _i in range(6):
             number, token = self.rule_number(next_val_fn, token)
             numbers.append(number)
         return numbers, token
 
-    def rule_number(self, next_val_fn, token):
+    def rule_number(self, next_val_fn: NextTokenFn, token: Token) -> tuple[Decimal, Token]:
         """Consume a required numeric token. Raises SyntaxError if not a number."""
         if token[0] not in self.number_tokens:
             raise SyntaxError("expecting a number; got %r" % (token,))
         # Multiply by 1 to normalise Decimal (strips trailing zeros, etc.).
+        assert token[1] is not None
         x = Decimal(token[1]) * 1
         token = next_val_fn()
         return x, token
 
-    def rule_optional_number(self, next_val_fn, token):
+    def rule_optional_number(self, next_val_fn: NextTokenFn, token: Token) -> tuple[Decimal | None, Token]:
         """Consume an optional numeric token.
 
         Returns ``(value, token)`` if a number was found, or ``(None, token)``
@@ -261,6 +292,7 @@ class SVGTransformationParser:
         if token[0] not in self.number_tokens:
             return None, token
         else:
+            assert token[1] is not None
             x = Decimal(token[1]) * 1
             token = next_val_fn()
             return x, token

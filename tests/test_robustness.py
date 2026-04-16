@@ -117,8 +117,10 @@ class TestStressInputs:
         assert "<path" in result
 
     def test_gradient_many_stops(self) -> None:
-        """SVG with 50 gradient stops should optimize without crashing."""
-        stops = "".join(f'<stop offset="{i / 49:.2f}" stop-color="rgb({i},{255 - i},0)"/>' for i in range(50))
+        """SVG with 200 gradient stops should optimize without crashing."""
+        stops = "".join(
+            f'<stop offset="{i / 199:.4f}" stop-color="rgb({i % 256},{(255 - i) % 256},0)"/>' for i in range(200)
+        )
         svg = (
             '<svg xmlns="http://www.w3.org/2000/svg">'
             "<defs>"
@@ -133,6 +135,16 @@ class TestStressInputs:
         assert "<svg" in result
         # Gradient should still be present (it's referenced)
         assert "linearGradient" in result or "g1" in result
+
+    def test_svg_over_one_megabyte(self) -> None:
+        """SVG larger than 1 MB should optimize without exhausting memory."""
+        segments = " ".join(f"L{i},{i}" for i in range(150_000))
+        svg = f'<svg xmlns="http://www.w3.org/2000/svg"><path d="M0,0 {segments}"/></svg>'
+        # Sanity check the input is actually >1 MB
+        assert len(svg) > 1_048_576
+        result = scourString(svg)
+        assert "<svg" in result
+        assert "<path" in result
 
     def test_deeply_nested_groups(self) -> None:
         """SVG with 50 levels of nested <g> elements should not crash."""

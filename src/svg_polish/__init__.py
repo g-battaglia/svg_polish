@@ -44,11 +44,13 @@ For advanced configuration, see :func:`svg_polish.optimizer.parse_args`.
 
 from __future__ import annotations
 
+import optparse
+
 __version__ = "1.0.0"
 __all__ = ["optimize", "optimize_file", "__version__"]
 
 
-def optimize(svg_string: str | bytes, options: object | None = None) -> str:
+def optimize(svg_string: str | bytes, options: optparse.Values | None = None) -> str:
     """Optimize an SVG string and return the optimized result.
 
     This is the primary entry point for programmatic SVG optimization.
@@ -86,16 +88,21 @@ def optimize(svg_string: str | bytes, options: object | None = None) -> str:
     """
     from svg_polish.optimizer import scourString
 
-    if isinstance(svg_string, bytes):
-        svg_string = svg_string.decode("utf-8")
+    # Pass bytes straight through: scourString lets xml.dom.minidom detect the
+    # encoding from the XML declaration, which handles non-UTF-8 files.
     return scourString(svg_string, options)
 
 
-def optimize_file(filename: str, options: object | None = None) -> str:
+def optimize_file(filename: str, options: optparse.Values | None = None) -> str:
     """Optimize an SVG file and return the optimized result.
 
     Convenience wrapper around :func:`optimize` that reads the file and
-    passes its contents to the optimizer.  The file is read as UTF-8.
+    passes its contents to the optimizer.  The file is opened in text mode
+    with UTF-8 decoding — this covers the vast majority of SVG inputs. For
+    files declaring a non-UTF-8 encoding in their XML prolog (e.g.
+    ISO-8859-15), call :func:`svg_polish.optimizer.scourXmlFile` directly,
+    which reads the file as bytes and lets ``xml.dom.minidom`` detect the
+    encoding from the prolog.
 
     Args:
         filename: Path to the SVG file to optimize.
@@ -108,7 +115,8 @@ def optimize_file(filename: str, options: object | None = None) -> str:
 
     Raises:
         FileNotFoundError: If *filename* does not exist.
-        UnicodeDecodeError: If the file is not valid UTF-8.
+        UnicodeDecodeError: If the file is not valid UTF-8 (use
+            :func:`svg_polish.optimizer.scourXmlFile` for non-UTF-8 inputs).
         xml.parsers.expat.ExpatError: If the file content is not valid XML.
 
     Example::
@@ -120,5 +128,6 @@ def optimize_file(filename: str, options: object | None = None) -> str:
             f.write(result)
 
     """
+    # Use ``with`` so the handle closes even if optimize() raises mid-parse.
     with open(filename, encoding="utf-8") as f:
         return optimize(f.read(), options)

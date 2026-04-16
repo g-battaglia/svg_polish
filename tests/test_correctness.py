@@ -153,6 +153,68 @@ class TestOptimizeTransformIdentity:
         result = self._optimize("rotate(360)")
         assert result == []
 
+    def test_optimize_transform_skewx_zero(self) -> None:
+        """skewX(0) should be removed (zero skew = identity)."""
+        result = self._optimize("skewX(0)")
+        assert result == []
+
+    def test_optimize_transform_skewy_zero(self) -> None:
+        """skewY(0) should be removed (zero skew = identity)."""
+        result = self._optimize("skewY(0)")
+        assert result == []
+
+    def test_optimize_transform_matrix_nonidentity_kept(self) -> None:
+        """A non-identity matrix should be preserved by optimizeTransform."""
+        result = self._optimize("matrix(2,0,0,2,10,20)")
+        assert len(result) == 1
+        assert result[0][0] in ("matrix", "translate", "scale")
+
+
+# ---------------------------------------------------------------------------
+# serializeXML — indentation variants
+# ---------------------------------------------------------------------------
+
+
+class TestSerializeXMLIndentation:
+    """serializeXML must respect each indentation flag combination."""
+
+    SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\"><g><rect fill='red' width='10' height='10'/></g></svg>"
+
+    def test_default_indent_space(self) -> None:
+        """Default indentation uses a single space character per level."""
+        from svg_polish.optimizer import parse_args
+
+        result = scourString(self.SVG, parse_args([]))
+        # Default indent_type is "space"; the inner <rect> sits one level in.
+        assert "\n <rect" in result
+
+    def test_indent_tab(self) -> None:
+        """--indent=tab uses tab characters."""
+        from svg_polish.optimizer import parse_args
+
+        result = scourString(self.SVG, parse_args(["--indent=tab"]))
+        # The inner <rect> sits one level in (the empty <g> is collapsed).
+        assert "\n\t<rect" in result
+
+    def test_indent_none(self) -> None:
+        """--indent=none disables indentation entirely."""
+        from svg_polish.optimizer import parse_args
+
+        result = scourString(self.SVG, parse_args(["--indent=none"]))
+        # No leading whitespace before nested elements
+        assert "\n  <rect" not in result
+        assert "\n\t<rect" not in result
+        assert "\n <rect" not in result
+
+    def test_no_line_breaks_single_line(self) -> None:
+        """--no-line-breaks collapses the SVG body into a single line."""
+        from svg_polish.optimizer import parse_args
+
+        result = scourString(self.SVG, parse_args(["--no-line-breaks"]))
+        body_start = result.find("<svg")
+        body_end = result.rfind("</svg>") + len("</svg>")
+        assert "\n" not in result[body_start:body_end]
+
 
 # ---------------------------------------------------------------------------
 # Idempotency of full optimization pipeline

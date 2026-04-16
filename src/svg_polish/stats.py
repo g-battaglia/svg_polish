@@ -121,6 +121,11 @@ class ScourStats:
     """Bytes saved by shortening or removing id values."""
 
     def __init__(self) -> None:
+        """Initialise every counter to ``0`` via :meth:`reset`.
+
+        ``__slots__`` is enumerated dynamically, so newly added counters do
+        not require updating this constructor.
+        """
         self.reset()
 
     def reset(self) -> None:
