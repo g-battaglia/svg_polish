@@ -9,12 +9,11 @@ from decimal import Decimal
 
 import pytest
 
+from svg_polish.css import parseCssString
 from svg_polish.svg_regex import EOF as PATH_EOF
 from svg_polish.svg_regex import SVGPathParser, svg_parser
 from svg_polish.svg_transform import EOF as TRANSFORM_EOF
-from svg_polish.svg_transform import SVGTransformationParser, svg_transform_parser
-from svg_polish.css import parseCssString
-
+from svg_polish.svg_transform import svg_transform_parser
 
 # ---------------------------------------------------------------------------
 # svg_regex.py — EOF repr (line 57)

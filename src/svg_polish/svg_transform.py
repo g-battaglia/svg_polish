@@ -1,4 +1,41 @@
-"""Small recursive descent parser for SVG transform="" data.
+"""Small recursive descent parser for SVG ``transform`` attribute data.
+
+This module implements a two-stage pipeline for parsing SVG transform strings
+(as defined in SVG 1.1 spec section 7.6) into structured transform lists:
+
+1. **Lexer** (:class:`Lexer`) — Tokenises the raw transform string into a stream
+   of ``(token_type, text_value)`` pairs.  Token types are ``"command"`` (the
+   transform function name), ``"coordstart"`` (``(``), ``"coordend"`` (``)``),
+   ``"float"``, and ``"int"``.  A trailing ``(EOF, None)`` sentinel marks
+   end-of-input.
+
+2. **Parser** (:class:`SVGTransformationParser`) — Consumes the token stream
+   and returns a list of ``(transform_type, numbers)`` tuples, one per
+   transform function in the input.
+
+Supported SVG transform functions (SVG 1.1 §7.6):
+
+    ==============  =========================  ==============
+    Function        Meaning                    Argument count
+    ==============  =========================  ==============
+    translate(tx)   Translate by tx            1
+    translate(tx,ty) Translate by tx, ty       2
+    scale(sx)       Scale by sx (sy = sx)      1
+    scale(sx, sy)   Scale by sx, sy            2
+    rotate(a)       Rotate a degrees           1
+    rotate(a, cx, cy) Rotate a deg around (cx, cy)  3
+    skewX(a)        Skew along X by a degrees  1
+    skewY(a)        Skew along Y by a degrees  1
+    matrix(a,b,c,d,e,f)  Full 2×3 affine matrix  6
+    ==============  =========================  ==============
+
+The module exposes a pre-built singleton parser:
+
+    ``svg_transform_parser`` — an :class:`SVGTransformationParser` ready for use.
+
+All numeric values are returned as :class:`decimal.Decimal` for lossless
+precision — this avoids floating-point rounding that could alter transform
+geometry during optimization.
 
 Original copyright:
     Copyright 2010 Louis Simard
@@ -33,6 +70,10 @@ EOF = _EOF()
 
 Token = tuple[str | _EOF, str | None]
 
+# Lexer token definitions: each entry is (type_name, regex_pattern).
+# "float" is listed before "int" so that e.g. "3.14" is matched as one float
+# rather than int "3" followed by stray ".14".
+# "command" matches the six SVG transform function names.
 lexicon: list[tuple[str, str]] = [
     ("float", r"[-+]?(?:(?:[0-9]*\.[0-9]+)|(?:[0-9]+\.?))(?:[Ee][-+]?[0-9]+)?"),
     ("int", r"[-+]?[0-9]+"),
@@ -43,10 +84,15 @@ lexicon: list[tuple[str, str]] = [
 
 
 class Lexer:
-    """Break SVG transform data into tokens."""
+    """Break SVG ``transform`` attribute data into tokens.
+
+    The combined regex is built from the *lexicon* at construction time and
+    applied via :meth:`finditer` — each match yields exactly one token.
+    """
 
     def __init__(self, lexicon: list[tuple[str, str]]) -> None:
         self.lexicon = lexicon
+        # Build a single combined regex with named groups: (?P<float>...)|(?P<int>...)|…
         parts = []
         for name, regex in lexicon:
             parts.append("(?P<%s>%s)" % (name, regex))
@@ -54,7 +100,12 @@ class Lexer:
         self.regex = re.compile(self.regex_string)
 
     def lex(self, text: str) -> Generator[Token, None, None]:
-        """Yield (token_type, str_data) tokens."""
+        """Yield ``(token_type, str_data)`` tokens from *text*.
+
+        After all matches are exhausted, yields a final ``(EOF, None)``
+        sentinel so the parser can detect end-of-input without catching
+        ``StopIteration``.
+        """
         for match in self.regex.finditer(text):
             for name, _ in self.lexicon:
                 m = match.group(name)
@@ -64,22 +115,28 @@ class Lexer:
         yield (EOF, None)
 
 
+# Pre-built lexer instance using the SVG transform lexicon defined above.
 svg_lexer = Lexer(lexicon)
 
 
 class SVGTransformationParser:
-    """Parse SVG transform="" data into a list of commands.
+    """Parse SVG ``transform`` attribute data into a list of commands.
 
-    Each distinct command will take the form of a tuple (type, data). The
-    ``type`` is the character string that defines the type of transformation,
-    so either of "translate", "rotate", "scale", "matrix", "skewX" and "skewY".
+    Each distinct command takes the form of a tuple ``(type, data)``. The
+    ``type`` is the transform function name: ``"translate"``, ``"rotate"``,
+    ``"scale"``, ``"matrix"``, ``"skewX"``, or ``"skewY"``.
 
-    The main method is ``parse(text)``.
+    The ``data`` list contains :class:`~decimal.Decimal` values whose count
+    depends on the transform type (see module docstring for details).
+
+    The main entry point is :meth:`parse`.
     """
 
     def __init__(self, lexer: Lexer = svg_lexer) -> None:
         self.lexer = lexer
 
+        # Dispatch table: maps each transform type name to the rule that
+        # knows how many numeric arguments to expect.
         self.command_dispatch: dict[str, Any] = {
             "translate": self.rule_1or2numbers,
             "scale": self.rule_1or2numbers,
@@ -89,10 +146,24 @@ class SVGTransformationParser:
             "matrix": self.rule_6numbers,
         }
 
+        # Token types that represent numeric values (used for argument parsing).
         self.number_tokens = list(["int", "float"])
 
     def parse(self, text: str) -> list[tuple[str, list[Decimal]]]:
-        """Parse a string of SVG transform="" data."""
+        """Parse a string of SVG ``transform`` attribute data.
+
+        This is the main entry point.  It tokenises *text* via the lexer,
+        then iterates consuming transform commands until EOF.
+
+        Args:
+            text: Raw transform string, e.g. ``"translate(10,20) scale(2)"``.
+
+        Returns:
+            A list of ``(transform_type, data)`` tuples.
+
+        Raises:
+            SyntaxError: If the input does not conform to the SVG transform grammar.
+        """
         gen = self.lexer.lex(text)
         next_val_fn = partial(next, *(gen,))
 
@@ -104,6 +175,7 @@ class SVGTransformationParser:
         return commands
 
     def rule_svg_transform(self, next_val_fn, token):
+        """Consume a single transform function: ``type(args)``."""
         if token[0] != "command":
             raise SyntaxError("expecting a transformation type; got %r" % (token,))
         command = token[1]
@@ -118,6 +190,11 @@ class SVGTransformationParser:
         return (command, numbers), token
 
     def rule_1or2numbers(self, next_val_fn, token):
+        """Consume 1 required number and 1 optional number.
+
+        Used by ``translate`` and ``scale`` where the second argument defaults
+        to the first if omitted.
+        """
         numbers = []
         token = next_val_fn()
         number, token = self.rule_number(next_val_fn, token)
@@ -128,12 +205,21 @@ class SVGTransformationParser:
         return numbers, token
 
     def rule_1number(self, next_val_fn, token):
+        """Consume exactly 1 required number.
+
+        Used by ``skewX`` and ``skewY``.
+        """
         token = next_val_fn()
         number, token = self.rule_number(next_val_fn, token)
         numbers = [number]
         return numbers, token
 
     def rule_1or3numbers(self, next_val_fn, token):
+        """Consume 1 required number and optionally 2 more.
+
+        Used by ``rotate``: ``rotate(angle)`` or ``rotate(angle, cx, cy)``.
+        If the optional second number is present, a third is required.
+        """
         numbers = []
         token = next_val_fn()
         number, token = self.rule_number(next_val_fn, token)
@@ -146,6 +232,10 @@ class SVGTransformationParser:
         return numbers, token
 
     def rule_6numbers(self, next_val_fn, token):
+        """Consume exactly 6 required numbers.
+
+        Used by ``matrix(a, b, c, d, e, f)`` representing a 2×3 affine matrix.
+        """
         numbers = []
         token = next_val_fn()
         for _i in range(6):
@@ -154,13 +244,20 @@ class SVGTransformationParser:
         return numbers, token
 
     def rule_number(self, next_val_fn, token):
+        """Consume a required numeric token. Raises SyntaxError if not a number."""
         if token[0] not in self.number_tokens:
             raise SyntaxError("expecting a number; got %r" % (token,))
+        # Multiply by 1 to normalise Decimal (strips trailing zeros, etc.).
         x = Decimal(token[1]) * 1
         token = next_val_fn()
         return x, token
 
     def rule_optional_number(self, next_val_fn, token):
+        """Consume an optional numeric token.
+
+        Returns ``(value, token)`` if a number was found, or ``(None, token)``
+        (with token unchanged) if the next token is not a number.
+        """
         if token[0] not in self.number_tokens:
             return None, token
         else:
@@ -169,4 +266,5 @@ class SVGTransformationParser:
             return x, token
 
 
+# Pre-built parser instance — use this for all transform parsing.
 svg_transform_parser = SVGTransformationParser()

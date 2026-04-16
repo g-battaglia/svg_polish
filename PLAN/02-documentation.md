@@ -109,36 +109,36 @@ def renameID(...): ...
 
 ### `optimizer.py` — Costanti e Dizionari
 
-- [ ] `NS` — documentare ogni namespace
-- [ ] `colors` — aggiungere header comment
-- [ ] `_name_to_hex` — aggiungere header comment
-- [ ] `default_properties` — aggiungere source reference
-- [ ] `default_attributes` / `default_attributes_universal` / `default_attributes_per_element` — spiegare struttura
-- [ ] `svgAttributes` — spiegare cosa sono e perche' frozenset
-- [ ] `referencingProps` — spiegare ruolo nel tracking riferimenti
-- [ ] `TEXT_CONTENT_ELEMENTS` — spiegare criterio di inclusione
-- [ ] `_LENGTH_SCOUR_TYPES` / `_LENGTH_SCOUR_ATTRS` — spiegare ottimizzazione
-- [ ] `XML_ENTS_*` — spiegare i tre dizionari di escape
-- [ ] `KNOWN_ATTRS_ORDER` / `KNOWN_ATTRS_ORDER_BY_NAME` — spiegare ordinamento attributi
+- [x] `NS` — documentare ogni namespace
+- [x] `colors` — aggiungere header comment
+- [x] `_name_to_hex` — aggiungere header comment
+- [x] `default_properties` — aggiungere source reference
+- [x] `default_attributes` / `default_attributes_universal` / `default_attributes_per_element` — spiegare struttura
+- [x] `svgAttributes` — spiegare cosa sono e perche' frozenset
+- [x] `referencingProps` — spiegare ruolo nel tracking riferimenti
+- [x] `TEXT_CONTENT_ELEMENTS` — spiegare criterio di inclusione
+- [x] `_LENGTH_SCOUR_TYPES` / `_LENGTH_SCOUR_ATTRS` — spiegare ottimizzazione
+- [x] `XML_ENTS_*` — spiegare i tre dizionari di escape
+- [x] `KNOWN_ATTRS_ORDER` / `KNOWN_ATTRS_ORDER_BY_NAME` — spiegare ordinamento attributi
 
 ### `optimizer.py` — Funzioni (espandere docstring esistenti)
 
-- [ ] `scourString` — documentare la pipeline completa step by step
-- [ ] `clean_path` — documentare le 8 fasi dell'algoritmo
-- [ ] `serializeXML` — documentare logica di indentazione e whitespace
-- [ ] `convertColor` — documentare i 3 path (named, rgb, hex)
-- [ ] `removeDefaultAttributeValues` — documentare meccanismo tainted set
-- [ ] `collapse_singly_referenced_gradients` — documentare mutazione dict
-- [ ] `removeDuplicateGradients` — documentare bucket key e loop di dedup
-- [ ] `optimizeTransform` — documentare le 10+ regole di semplificazione
+- [x] `scourString` — documentare la pipeline completa step by step
+- [x] `clean_path` — documentare le 8 fasi dell'algoritmo
+- [x] `serializeXML` — documentare logica di indentazione e whitespace
+- [x] `convertColor` — documentare i 3 path (named, rgb, hex)
+- [x] `removeDefaultAttributeValues` — documentare meccanismo tainted set
+- [x] `collapse_singly_referenced_gradients` — documentare mutazione dict
+- [x] `removeDuplicateGradients` — documentare bucket key e loop di dedup
+- [x] `optimizeTransform` — documentare le 10+ regole di semplificazione
 
 ### Altri Moduli
 
-- [ ] `css.py` — documentare parser CSS minimale
-- [ ] `svg_regex.py` — documentare grammatica path SVG
-- [ ] `svg_transform.py` — documentare grammatica transform SVG
-- [ ] `stats.py` — documentare ogni campo di ScourStats
-- [ ] `__init__.py` — documentare API pubblica
+- [x] `css.py` — documentare parser CSS minimale
+- [x] `svg_regex.py` — documentare grammatica path SVG
+- [x] `svg_transform.py` — documentare grammatica transform SVG
+- [x] `stats.py` — documentare ogni campo di ScourStats
+- [x] `__init__.py` — documentare API pubblica
 
 ## Verifica
 

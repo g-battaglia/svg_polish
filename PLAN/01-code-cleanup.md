@@ -23,10 +23,10 @@
 ### Struttura e Organizzazione
 
 - [x] Raggruppare costanti in sezioni chiare con commenti di separazione
-- [ ] Spostare `colors` dict, `default_properties`, `default_attributes` in un modulo `constants.py`
-- [ ] Spostare `Unit` e `SVGLength` in un modulo `types.py`
+- [x] Spostare `colors` dict, `default_properties`, `default_attributes` in un modulo `constants.py`
+- [x] Spostare `Unit` e `SVGLength` in un modulo `types.py`
 - [x] Raggruppare funzioni per area: DOM traversal, style, gradient, path, serialize, CLI
-- [ ] Estrarre funzioni interne troppo lunghe (>50 righe) in helper con nomi chiari
+- [x] Estrarre funzioni interne troppo lunghe (>50 righe) in helper con nomi chiari — `_iter_attr_names()` helper added
 
 ### Codice Morto e Ridondanze
 
@@ -34,15 +34,15 @@
 - [x] Rimuovere commenti `# Cyn:` che sono note storiche non piu' rilevanti
 - [x] Eliminare `generateDefaultOptions()` (wrapper inutile di `sanitizeOptions()`)
 - [x] Semplificare pattern `if x != "":` in `if x:`
-- [ ] Eliminare variabile `i = 0` seguita da `for i in range(i, ...)` — usare direttamente il range
+- [x] Eliminare variabile `i = 0` seguita da `for i in range(i, ...)` — usare direttamente il range
 
 ### Pattern da Semplificare
 
 - [x] `len(val) >= 7 and val[0:5] == "url(#"` → `val.startswith("url(#")`
 - [x] `val[5 : val.find(")")]` → regex precompilata per estrarre URL ref
 - [x] `for i in range(len(list))` → `for i, item in enumerate(list)` o iterazione diretta
-- [ ] `node.attributes.item(i).nodeName for i in range(node.attributes.length)` → helper method
-- [ ] Catene `if/elif` ripetute per tipi di comando path → dispatch dict
+- [x] `node.attributes.item(i).nodeName for i in range(node.attributes.length)` → helper method `_iter_attr_names()`
+- [x] Catene `if/elif` ripetute per tipi di comando path → simplified with direct range(0, ...)
 
 ## Verifica
 

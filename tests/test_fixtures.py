@@ -6,7 +6,6 @@ by checking that the output is valid, smaller, and preserves key elements.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from svg_polish import optimize
@@ -219,12 +218,6 @@ class TestFixtureComplexScene:
         # 0.900000 should be reduced
         assert "0.900000" not in result
         # 2.000, 1.500, 1.000 should be reduced
-        assert "2.000" not in result
-        assert "1.500" not in result
-
-    def test_precision_reduced(self):
-        result = _optimize(FIXTURES / "complex-scene.svg")
-        # stroke-width values like 2.000, 1.500 should be reduced
         assert "2.000" not in result
         assert "1.500" not in result
 

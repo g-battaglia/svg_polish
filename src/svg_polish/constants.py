@@ -22,8 +22,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict, namedtuple
 
-from svg_polish import __version__
-
+from svg_polish import __version__  # noqa: I001 — must import before using __version__ below
 
 # =============================================================================
 # Application Identity and Version
@@ -458,7 +457,7 @@ for _name, _rgb_str in colors.items():
     _m = rgb.match(_rgb_str)
     if _m:
         _r, _g, _b = int(_m.group(1)), int(_m.group(2)), int(_m.group(3))
-        _hex = "#%02x%02x%02x" % (_r, _g, _b)
+        _hex = f"#{_r:02x}{_g:02x}{_b:02x}"
         # Compress to 3-char shorthand if all channels have matching hex digits
         # (e.g. "#aabbcc" -> "#abc", "#ffffff" -> "#fff").
         if len(_hex) == 7 and _hex[1] == _hex[2] and _hex[3] == _hex[4] and _hex[5] == _hex[6]:
