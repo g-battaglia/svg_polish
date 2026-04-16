@@ -1,0 +1,13 @@
+{
+  "active": true,
+  "iteration": 1,
+  "minIterations": 1,
+  "maxIterations": 0,
+  "completionPromise": "COMPLETE",
+  "tasksMode": false,
+  "taskPromise": "READY_FOR_NEXT_TASK",
+  "prompt": "Sei l'agente polish. Esegui TUTTE le fasi del piano di refactoring in PLAN/, partendo da PLAN/README.md. Lavora su ogni checklist item una alla volta. Dopo ogni modifica esegui i test. Quando completi un item, spuntalo con [x]. Procedi fino a   completare TUTTE le fasi: 01-code-cleanup, 02-documentation, 03-optimization, 04-testing, 05-type-safety, 06-simplification. Non fermarti finché non è tutto fatto. Rispondi COMPLETE solo quando ogni checklist è completata al 100%.",
+  "startedAt": "2026-04-16T17:09:22.904Z",
+  "model": "",
+  "agent": "opencode"
+}

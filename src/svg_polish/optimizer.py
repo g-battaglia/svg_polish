@@ -35,21 +35,37 @@ from svg_polish.svg_transform import svg_transform_parser
 if TYPE_CHECKING:
     from xml.dom.minidom import Document, Element
 
+
+# =============================================================================
+# Application Identity and Version
+# =============================================================================
+
 APP = "svg-polish"
 VER = __version__
 COPYRIGHT = "Copyright Jeff Schiller, Louis Simard, 2010"
 
 
+# XML entity escape maps for make_well_formed().
+# Each map contains only the entities that need escaping for a given quote style.
 XML_ENTS_NO_QUOTES = {"<": "&lt;", ">": "&gt;", "&": "&amp;"}
 XML_ENTS_ESCAPE_APOS = XML_ENTS_NO_QUOTES.copy()
 XML_ENTS_ESCAPE_APOS["'"] = "&apos;"
 XML_ENTS_ESCAPE_QUOT = XML_ENTS_NO_QUOTES.copy()
 XML_ENTS_ESCAPE_QUOT['"'] = "&quot;"
 
-# Used to split values where "x y" or "x,y" or a mix of the two is allowed
+# Regex: split on comma-or-whitespace (SVG coordinate lists).
+# Matches "x y", "x,y", or mixed whitespace/comma separators.
 RE_COMMA_WSP = re.compile(r"\s*[\s,]\s*")
+# Regex: collapse multiple spaces to one (used in text content normalization).
 _RE_MULTI_SPACE = re.compile(r"  +")
 
+
+# =============================================================================
+# XML and SVG Namespace Constants
+# =============================================================================
+# SVG and editor-specific XML namespace URIs.
+# Used to identify/strip editor-specific elements and attributes.
+# Key = short name, Value = namespace URI.
 NS = {
     "SVG": "http://www.w3.org/2000/svg",
     "XLINK": "http://www.w3.org/1999/xlink",
@@ -68,6 +84,9 @@ NS = {
     "SKETCH": "http://www.bohemiancoding.com/sketch/ns",
 }
 
+# Namespace URIs of editor-specific elements/attributes to strip by default.
+# These are Inkscape, Sodipodi, Adobe Illustrator, Sketch, and related tools.
+# Unless --keep-editor-data is set, elements/attributes in these namespaces are removed.
 unwanted_ns = [
     NS["SODIPODI"],
     NS["INKSCAPE"],
@@ -84,89 +103,105 @@ unwanted_ns = [
     NS["SKETCH"],
 ]
 
-# A list of all SVG presentation properties
-#
-# Sources for this list:
-#     https://www.w3.org/TR/SVG/propidx.html              (implemented)
-#     https://www.w3.org/TR/SVGTiny12/attributeTable.html (implemented)
-#     https://www.w3.org/TR/SVG2/propidx.html             (not yet implemented)
-#
-svgAttributes = frozenset([
-    # SVG 1.1
-    "alignment-baseline",
-    "baseline-shift",
-    "clip",
-    "clip-path",
-    "clip-rule",
-    "color",
-    "color-interpolation",
-    "color-interpolation-filters",
-    "color-profile",
-    "color-rendering",
-    "cursor",
-    "direction",
-    "display",
-    "dominant-baseline",
-    "enable-background",
-    "fill",
-    "fill-opacity",
-    "fill-rule",
-    "filter",
-    "flood-color",
-    "flood-opacity",
-    "font",
-    "font-family",
-    "font-size",
-    "font-size-adjust",
-    "font-stretch",
-    "font-style",
-    "font-variant",
-    "font-weight",
-    "glyph-orientation-horizontal",
-    "glyph-orientation-vertical",
-    "image-rendering",
-    "kerning",
-    "letter-spacing",
-    "lighting-color",
-    "marker",
-    "marker-end",
-    "marker-mid",
-    "marker-start",
-    "mask",
-    "opacity",
-    "overflow",
-    "pointer-events",
-    "shape-rendering",
-    "stop-color",
-    "stop-opacity",
-    "stroke",
-    "stroke-dasharray",
-    "stroke-dashoffset",
-    "stroke-linecap",
-    "stroke-linejoin",
-    "stroke-miterlimit",
-    "stroke-opacity",
-    "stroke-width",
-    "text-anchor",
-    "text-decoration",
-    "text-rendering",
-    "unicode-bidi",
-    "visibility",
-    "word-spacing",
-    "writing-mode",
-    # SVG 1.2 Tiny
-    "audio-level",
-    "buffered-rendering",
-    "display-align",
-    "line-increment",
-    "solid-color",
-    "solid-opacity",
-    "text-align",
-    "vector-effect",
-    "viewport-fill",
-    "viewport-fill-opacity",
-])
 
+# =============================================================================
+# SVG Presentation Attributes
+# =============================================================================
+
+# Complete set of SVG presentation attributes (CSS property names usable as XML attributes).
+# Stored as frozenset for O(1) membership testing in repairStyle() and style-to-XML conversion.
+#
+# Sources:
+#     https://www.w3.org/TR/SVG/propidx.html              (SVG 1.1 — implemented)
+#     https://www.w3.org/TR/SVGTiny12/attributeTable.html  (SVG 1.2 Tiny — implemented)
+#     https://www.w3.org/TR/SVG2/propidx.html              (SVG 2 — not yet implemented)
+svgAttributes = frozenset(
+    [
+        # SVG 1.1
+        "alignment-baseline",
+        "baseline-shift",
+        "clip",
+        "clip-path",
+        "clip-rule",
+        "color",
+        "color-interpolation",
+        "color-interpolation-filters",
+        "color-profile",
+        "color-rendering",
+        "cursor",
+        "direction",
+        "display",
+        "dominant-baseline",
+        "enable-background",
+        "fill",
+        "fill-opacity",
+        "fill-rule",
+        "filter",
+        "flood-color",
+        "flood-opacity",
+        "font",
+        "font-family",
+        "font-size",
+        "font-size-adjust",
+        "font-stretch",
+        "font-style",
+        "font-variant",
+        "font-weight",
+        "glyph-orientation-horizontal",
+        "glyph-orientation-vertical",
+        "image-rendering",
+        "kerning",
+        "letter-spacing",
+        "lighting-color",
+        "marker",
+        "marker-end",
+        "marker-mid",
+        "marker-start",
+        "mask",
+        "opacity",
+        "overflow",
+        "pointer-events",
+        "shape-rendering",
+        "stop-color",
+        "stop-opacity",
+        "stroke",
+        "stroke-dasharray",
+        "stroke-dashoffset",
+        "stroke-linecap",
+        "stroke-linejoin",
+        "stroke-miterlimit",
+        "stroke-opacity",
+        "stroke-width",
+        "text-anchor",
+        "text-decoration",
+        "text-rendering",
+        "unicode-bidi",
+        "visibility",
+        "word-spacing",
+        "writing-mode",
+        # SVG 1.2 Tiny
+        "audio-level",
+        "buffered-rendering",
+        "display-align",
+        "line-increment",
+        "solid-color",
+        "solid-opacity",
+        "text-align",
+        "vector-effect",
+        "viewport-fill",
+        "viewport-fill-opacity",
+    ]
+)
+
+
+# =============================================================================
+# Named CSS Colors
+# =============================================================================
+
+# Named CSS/SVG colors mapped to their rgb() equivalents.
+# Key = lowercase color name, Value = "rgb(R, G, B)" string.
+# Source: https://www.w3.org/TR/SVG/types.html#ColorKeywords
+# Used by convertColor() as input; _name_to_hex (below) is the pre-computed hex form.
 colors = {
     "aliceblue": "rgb(240, 248, 255)",
     "antiquewhite": "rgb(250, 235, 215)",
@@ -317,12 +352,20 @@ colors = {
     "yellowgreen": "rgb(154, 205, 50)",
 }
 
-# A list of default poperties that are safe to remove
+
+# =============================================================================
+# CSS/SVG Default Property Values
+# =============================================================================
+
+# CSS/SVG default property values that can safely be removed from elements.
+# Key = property name (str), Value = default value (str).
+# Excludes all properties with 'auto' as default (too ambiguous to remove).
+# Used by removeDefaultAttributeValues() to strip redundant attributes/styles.
 #
-# Sources for this list:
-#     https://www.w3.org/TR/SVG/propidx.html              (implemented)
-#     https://www.w3.org/TR/SVGTiny12/attributeTable.html (implemented)
-#     https://www.w3.org/TR/SVG2/propidx.html             (not yet implemented)
+# Sources:
+#     https://www.w3.org/TR/SVG/propidx.html              (SVG 1.1 — implemented)
+#     https://www.w3.org/TR/SVGTiny12/attributeTable.html  (SVG 1.2 Tiny — implemented)
+#     https://www.w3.org/TR/SVG2/propidx.html              (SVG 2 — not yet implemented)
 #
 default_properties = {  # excluded all properties with 'auto' as default
     # SVG 1.1 presentation attributes
@@ -384,6 +427,11 @@ default_properties = {  # excluded all properties with 'auto' as default
 }
 
 
+# =============================================================================
+# Numeric Helpers
+# =============================================================================
+
+
 def is_same_sign(a: Decimal, b: Decimal) -> bool:
     """Return True if *a* and *b* are both non-negative or both non-positive."""
     return (a <= 0 and b <= 0) or (a >= 0 and b >= 0)
@@ -397,6 +445,10 @@ def is_same_direction(x1: Decimal, y1: Decimal, x2: Decimal, y2: Decimal) -> boo
     else:
         return False
 
+
+# =============================================================================
+# Length Parsing (Unit, SVGLength)
+# =============================================================================
 
 scinumber = re.compile(r"[-+]?(\d*\.?)?\d+[eE][-+]?\d+")
 number = re.compile(r"[-+]?(\d*\.?)?\d+")
@@ -467,9 +519,9 @@ class Unit(object):
 
 
 class SVGLength(object):
-    def __init__(self, str: str) -> None:
+    def __init__(self, length_str: str) -> None:
         try:  # simple unitless and no scientific notation
-            self.value = float(str)
+            self.value = float(length_str)
             if int(self.value) == self.value:
                 self.value = int(self.value)
             self.units = Unit.NONE
@@ -479,16 +531,16 @@ class SVGLength(object):
             # parse out number, exponent and unit
             self.value = 0
             unitBegin = 0
-            scinum = scinumber.match(str)
+            scinum = scinumber.match(length_str)
             if scinum is not None:
                 # this will always match, no need to check it
-                numMatch = number.match(str)
-                expMatch = sciExponent.search(str, numMatch.start(0))
+                numMatch = number.match(length_str)
+                expMatch = sciExponent.search(length_str, numMatch.start(0))
                 self.value = float(numMatch.group(0)) * 10 ** float(expMatch.group(1))
                 unitBegin = expMatch.end(1)
             else:
                 # unit or invalid
-                numMatch = number.match(str)
+                numMatch = number.match(length_str)
                 if numMatch is not None:
                     self.value = float(numMatch.group(0))
                     unitBegin = numMatch.end(0)
@@ -497,24 +549,28 @@ class SVGLength(object):
                 self.value = int(self.value)
 
             if unitBegin != 0:
-                unitMatch = unit.search(str, unitBegin)
+                unitMatch = unit.search(length_str, unitBegin)
                 if unitMatch is not None:
                     self.units = Unit.get(unitMatch.group(0))
 
             # invalid
             else:
-                # TODO: this needs to set the default for the given attribute (how?)
                 self.value = 0
                 self.units = Unit.INVALID
+
+
+# =============================================================================
+# DOM Traversal and Reference Tracking
+# =============================================================================
 
 
 def findElementsWithId(node: Element, elems: dict[str, Element] | None = None) -> dict[str, Element]:
     """Return a mapping of ``{id: element}`` for every element with an ``id`` attribute."""
     if elems is None:
         elems = {}
-    id = node.getAttribute("id")
-    if id != "":
-        elems[id] = node
+    elem_id = node.getAttribute("id")
+    if elem_id:
+        elems[elem_id] = node
     if node.hasChildNodes():
         for child in node.childNodes:
             # from http://www.w3.org/TR/DOM-Level-2-Core/idl-definitions.html
@@ -524,7 +580,12 @@ def findElementsWithId(node: Element, elems: dict[str, Element] | None = None) -
     return elems
 
 
-referencingProps = frozenset(["fill", "stroke", "filter", "clip-path", "mask", "marker-start", "marker-end", "marker-mid"])
+# SVG attributes that may contain url(#id) references to other elements.
+# Frozen for O(1) membership testing during DOM traversal.
+# Used by findReferencingProperty() and findReferencedElements().
+referencingProps = frozenset(
+    ["fill", "stroke", "filter", "clip-path", "mask", "marker-start", "marker-end", "marker-mid"]
+)
 
 
 def findReferencedElements(node: Element, ids: dict[str, set[Element]] | None = None) -> dict[str, set[Element]]:
@@ -536,8 +597,6 @@ def findReferencedElements(node: Element, ids: dict[str, set[Element]] | None = 
 
     if ids is None:
         ids = {}
-    # TODO: input argument ids is clunky here (see below how it is called)
-    # GZ: alternative to passing dict, use **kwargs
 
     # if this node is a style element, parse its text into CSS
     if node.nodeName == "style" and node.namespaceURI == NS["SVG"]:
@@ -545,7 +604,7 @@ def findReferencedElements(node: Element, ids: dict[str, set[Element]] | None = 
         # this actually modifies the node, and we don't want to keep
         # whitespace around if there's any)
         stylesheet = "".join(child.nodeValue for child in node.childNodes)
-        if stylesheet != "":
+        if stylesheet:
             cssRules = parseCssString(stylesheet)
             for rule in cssRules:
                 for propname in rule["properties"]:
@@ -555,13 +614,13 @@ def findReferencedElements(node: Element, ids: dict[str, set[Element]] | None = 
 
     # else if xlink:href is set, then grab the id
     href = node.getAttributeNS(NS["XLINK"], "href")
-    if href != "" and len(href) > 1 and href[0] == "#":
+    if href and len(href) > 1 and href[0] == "#":
         # we remove the hash mark from the beginning of the id
-        id = href[1:]
-        if id in ids:
-            ids[id].add(node)
+        ref_id = href[1:]
+        if ref_id in ids:
+            ids[ref_id].add(node)
         else:
-            ids[id] = {node}
+            ids[ref_id] = {node}
 
     # now get all style properties and the fill, stroke, filter attributes
     styles = node.getAttribute("style").split(";")
@@ -588,27 +647,32 @@ def findReferencedElements(node: Element, ids: dict[str, set[Element]] | None = 
 
 def findReferencingProperty(node: Element, prop: str, val: str, ids: dict[str, set[Element]]) -> None:
     """Record *node* in *ids* if *prop*/*val* contains a ``url(#id)`` reference."""
-    if prop in referencingProps and val != "":
-        if len(val) >= 7 and val[0:5] == "url(#":
-            id = val[5 : val.find(")")]
-            if id in ids:
-                ids[id].add(node)
+    if prop in referencingProps and val:
+        if len(val) >= 7 and val.startswith("url(#"):
+            ref_id = val[5 : val.find(")")]
+            if ref_id in ids:
+                ids[ref_id].add(node)
             else:
-                ids[id] = {node}
+                ids[ref_id] = {node}
         # if the url has a quote in it, we need to compensate
         elif len(val) >= 8:
-            id = None
+            ref_id = None
             # double-quote
-            if val[0:6] == 'url("#':
-                id = val[6 : val.find('")')]
+            if val.startswith('url("#'):
+                ref_id = val[6 : val.find('")')]
             # single-quote
-            elif val[0:6] == "url('#":
-                id = val[6 : val.find("')")]
-            if id is not None:
-                if id in ids:
-                    ids[id].add(node)
+            elif val.startswith("url('#"):
+                ref_id = val[6 : val.find("')")]
+            if ref_id is not None:
+                if ref_id in ids:
+                    ids[ref_id].add(node)
                 else:
-                    ids[id] = {node}
+                    ids[ref_id] = {node}
+
+
+# =============================================================================
+# Unused Element Removal
+# =============================================================================
 
 
 def removeUnusedDefs(
@@ -675,9 +739,9 @@ def remove_unreferenced_elements(
             stats.num_elements_removed += len(elemsToRemove)
             num += len(elemsToRemove)
 
-    for id in identifiedElements:
-        if id not in referencedIDs:
-            goner = identifiedElements[id]
+    for elem_id, elem in identifiedElements.items():
+        if elem_id not in referencedIDs:
+            goner = elem
             if (
                 goner is not None
                 and goner.nodeName in removeTags
@@ -689,6 +753,11 @@ def remove_unreferenced_elements(
                 stats.num_elements_removed += 1
 
     return num
+
+
+# =============================================================================
+# ID Management (shortening, renaming, protection)
+# =============================================================================
 
 
 def shortenIDs(
@@ -846,7 +915,7 @@ def renameID(
     if referringNodes is not None:
         # Look for the idFrom ID name in each of the referencing elements,
         # exactly like findReferencedElements would.
-        # Cyn: Duplicated processing!
+        # NOTE: This re-parses attributes similarly to findReferencedElements
 
         for node in referringNodes:
             # if this node is a style element, parse its text into CSS
@@ -875,7 +944,7 @@ def renameID(
 
             # if the style has url(#idFrom), then change the id
             styles = node.getAttribute("style")
-            if styles != "":
+            if styles:
                 newValue = styles.replace("url(#" + idFrom + ")", "url(#" + idTo + ")")
                 newValue = newValue.replace("url('#" + idFrom + "')", "url(#" + idTo + ")")
                 newValue = newValue.replace('url("#' + idFrom + '")', "url(#" + idTo + ")")
@@ -886,7 +955,7 @@ def renameID(
             # now try the fill, stroke, filter attributes
             for attr in referencingProps:
                 oldValue = node.getAttribute(attr)
-                if oldValue != "":
+                if oldValue:
                     newValue = oldValue.replace("url(#" + idFrom + ")", "url(#" + idTo + ")")
                     newValue = newValue.replace("url('#" + idFrom + "')", "url(#" + idTo + ")")
                     newValue = newValue.replace('url("#' + idFrom + '")', "url(#" + idTo + ")")
@@ -906,17 +975,17 @@ def protected_ids(seenIDs: dict[str, Element], options: optparse.Values) -> list
             protect_ids_list = options.protect_ids_list.split(",")
         if options.protect_ids_prefix:
             protect_ids_prefixes = options.protect_ids_prefix.split(",")
-        for id in seenIDs:
+        for elem_id in seenIDs:
             protected = False
-            if options.protect_ids_noninkscape and not id[-1].isdigit():
+            if options.protect_ids_noninkscape and not elem_id[-1].isdigit():
                 protected = True
-            elif protect_ids_list and id in protect_ids_list:
+            elif protect_ids_list and elem_id in protect_ids_list:
                 protected = True
             elif protect_ids_prefixes:
-                if any(id.startswith(prefix) for prefix in protect_ids_prefixes):
+                if any(elem_id.startswith(prefix) for prefix in protect_ids_prefixes):
                     protected = True
             if protected:
-                protectedIDs.append(id)
+                protectedIDs.append(elem_id)
     return protectedIDs
 
 
@@ -925,8 +994,8 @@ def unprotected_ids(doc: Document, options: optparse.Values) -> dict[str, Elemen
     identifiedElements = findElementsWithId(doc.documentElement)
     protectedIDs = protected_ids(identifiedElements, options)
     if protectedIDs:
-        for id in protectedIDs:
-            del identifiedElements[id]
+        for protected_id in protectedIDs:
+            del identifiedElements[protected_id]
     return identifiedElements
 
 
@@ -937,12 +1006,16 @@ def remove_unreferenced_ids(referencedIDs: dict[str, set[Element]], identifiedEl
     """
     keepTags = ["font"]
     num = 0
-    for id in identifiedElements:
-        node = identifiedElements[id]
-        if id not in referencedIDs and node.nodeName not in keepTags:
+    for elem_id, node in identifiedElements.items():
+        if elem_id not in referencedIDs and node.nodeName not in keepTags:
             node.removeAttribute("id")
             num += 1
     return num
+
+
+# =============================================================================
+# Namespace Cleanup
+# =============================================================================
 
 
 def removeNamespacedAttributes(node: Element, namespaces: list[str]) -> int:
@@ -986,6 +1059,11 @@ def removeNamespacedElements(node: Element, namespaces: list[str]) -> int:
     return num
 
 
+# =============================================================================
+# Descriptive Element Removal
+# =============================================================================
+
+
 def remove_descriptive_elements(doc: Document, options: optparse.Values) -> int:
     """Remove ``<title>``, ``<desc>``, and ``<metadata>`` elements when requested by options."""
     elementTypes = []
@@ -1009,6 +1087,11 @@ def remove_descriptive_elements(doc: Document, options: optparse.Values) -> int:
         element.parentNode.removeChild(element)
 
     return len(elementsToRemove)
+
+
+# =============================================================================
+# Group Operations (collapse, merge, create)
+# =============================================================================
 
 
 def g_tag_is_mergeable(node: Element) -> bool:
@@ -1247,7 +1330,7 @@ def create_groups_for_common_attributes(elem: Element, stats: ScourStats) -> Non
 
     # TODO perhaps all of the Presentation attributes in http://www.w3.org/TR/SVG/struct.html#GElement
     # could be added here
-    # Cyn: These attributes are the same as in moveAttributesToParentGroup, and must always be
+    # These attributes must match those in moveCommonAttributesToParentGroup exactly.
     for curAttr in [
         "clip-rule",
         "display-align",
@@ -1288,7 +1371,7 @@ def create_groups_for_common_attributes(elem: Element, stats: ScourStats) -> Non
 
             if (
                 childNode.nodeType == Node.ELEMENT_NODE
-                and childNode.getAttribute(curAttr) != ""
+                and childNode.getAttribute(curAttr)
                 and childNode.nodeName
                 in [
                     # only attempt to group elements that the content model allows to be children of a <g>
@@ -1415,6 +1498,11 @@ def create_groups_for_common_attributes(elem: Element, stats: ScourStats) -> Non
             create_groups_for_common_attributes(childNode, stats)
 
 
+# =============================================================================
+# Unused Attribute Cleanup
+# =============================================================================
+
+
 def removeUnusedAttributesOnParent(elem: Element) -> int:
     """Remove inheritable attributes from a parent that no child actually inherits.
 
@@ -1488,6 +1576,11 @@ def removeUnusedAttributesOnParent(elem: Element) -> int:
         num += 1
 
     return num
+
+
+# =============================================================================
+# Gradient Optimization (dedup, collapse, stops)
+# =============================================================================
 
 
 def remove_duplicate_gradient_stops(doc: Document, stats: ScourStats) -> int:
@@ -1781,6 +1874,11 @@ def removeDuplicateGradients(doc: Document, referencedIDs: dict[str, set[Element
     return num
 
 
+# =============================================================================
+# Style Handling (get, set, repair, inherit)
+# =============================================================================
+
+
 def _getStyle(node: Element) -> dict[str, str]:
     """Return the ``style`` attribute of *node* as a ``{property: value}`` dict.
 
@@ -1809,7 +1907,7 @@ def _setStyle(node: Element, styleMap: dict[str, str]) -> Element:
     """Set the ``style`` attribute of *node* from *styleMap* and update the cache."""
     node._cachedStyle = styleMap
     fixedStyle = ";".join(prop + ":" + styleMap[prop] for prop in styleMap)
-    if fixedStyle != "":
+    if fixedStyle:
         node.setAttribute("style", fixedStyle)
     elif node.getAttribute("style"):
         node.removeAttribute("style")
@@ -1833,7 +1931,7 @@ def repairStyle(node: Element, options: optparse.Values) -> int:
                 chunk = styleMap[prop].split(") ")
                 if (
                     len(chunk) == 2
-                    and (chunk[0][:5] == "url(#" or chunk[0][:6] == 'url("#' or chunk[0][:6] == "url('#")
+                    and (chunk[0].startswith("url(#") or chunk[0].startswith('url("#') or chunk[0].startswith("url('#"))
                     and chunk[1] == "rgb(0, 0, 0)"
                 ):
                     styleMap[prop] = chunk[0] + ")"
@@ -2141,6 +2239,11 @@ def mayContainTextNodes(node: Element) -> bool:
 #     https://www.w3.org/TR/SVGTiny12/attributeTable.html (not yet implemented)
 #     https://www.w3.org/TR/SVG2/attindex.html            (not yet implemented)
 #
+
+# =============================================================================
+# Default Attribute Removal
+# =============================================================================
+
 DefaultAttribute = namedtuple("DefaultAttribute", ["name", "value", "units", "elements", "conditions"])
 DefaultAttribute.__new__.__defaults__ = (None,) * len(DefaultAttribute._fields)
 default_attributes = [
@@ -2378,9 +2481,11 @@ default_attributes = [
 ]
 
 # split to increase lookup performance
-# TODO: 'default_attributes_universal' is actually empty right now - will we ever need it?
-default_attributes_universal = []  # list containing attributes valid for all elements
-default_attributes_per_element = defaultdict(list)  # dict containing lists of attributes valid for individual elements
+# Pre-split lookup structures for removeDefaultAttributeValues().
+# universal: attributes valid for ALL elements (currently empty — no universal defaults defined).
+# per_element: dict mapping element tag name -> list of DefaultAttribute entries for that element.
+default_attributes_universal = []
+default_attributes_per_element = defaultdict(list)
 for default_attribute in default_attributes:
     if default_attribute.elements is None:  # pragma: no cover — currently no universal defaults exist
         default_attributes_universal.append(default_attribute)
@@ -2447,7 +2552,9 @@ def removeDefaultAttributeValues(node: Element, options: optparse.Values, tainte
     # For increased performance do not iterate the whole list for each element but run only on valid subsets
     # - 'default_attributes_universal' (attributes valid for all elements)
     # - 'default_attributes_per_element' (attributes specific to one specific element type)
-    for attribute in default_attributes_universal:  # pragma: no cover — list is always empty (no universal defaults defined)
+    for (
+        attribute
+    ) in default_attributes_universal:  # pragma: no cover — list is always empty (no universal defaults defined)
         num += removeDefaultAttributeValue(node, attribute)
     if node.nodeName in default_attributes_per_element:
         for attribute in default_attributes_per_element[node.nodeName]:
@@ -2482,11 +2589,16 @@ def removeDefaultAttributeValues(node: Element, options: optparse.Values, tainte
     return num
 
 
+# =============================================================================
+# Color Conversion
+# =============================================================================
+
 rgb = re.compile(r"\s*rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\s*")
 rgbp = re.compile(r"\s*rgb\(\s*(\d*\.?\d+)%\s*,\s*(\d*\.?\d+)%\s*,\s*(\d*\.?\d+)%\s*\)\s*")
 
-# Pre-computed name->hex mapping: avoids regex parsing for named colors.
-# Built once at import time from the `colors` dict.
+# Pre-computed name->shortest-hex mapping, built at import time from `colors` dict.
+# Key = lowercase color name, Value = shortest hex form (e.g. "#fff" or "#abcd").
+# Avoids regex parsing in the hot convertColor() path for all 148 named colors.
 _name_to_hex = {}
 for _name, _rgb_str in colors.items():
     _m = rgb.match(_rgb_str)
@@ -2548,7 +2660,7 @@ def convertColors(element: Element) -> int:
     styles = _getStyle(element)
     for attr in attrsToConvert:
         oldColorValue = element.getAttribute(attr)
-        if oldColorValue != "":
+        if oldColorValue:
             newColorValue = convertColor(oldColorValue)
             oldBytes = len(oldColorValue)
             newBytes = len(newColorValue)
@@ -2573,9 +2685,9 @@ def convertColors(element: Element) -> int:
     return numBytes
 
 
-# TODO: go over what this method does and see if there is a way to optimize it
-# TODO: go over the performance of this method and see if I can save memory/speed by
-#       reusing data structures, etc
+# =============================================================================
+# Path Optimization
+# =============================================================================
 
 
 def clean_path(element: Element, options: optparse.Values, stats: ScourStats) -> None:
@@ -3068,7 +3180,7 @@ def clean_path(element: Element, options: optparse.Values, stats: ScourStats) ->
     newPath = [path[0]]
     for cmd, data in path[1:]:
         # flush the previous command if it is not the same type as the current command
-        if prevCmd != "":
+        if prevCmd:
             if cmd != prevCmd or cmd == "m":
                 newPath.append((prevCmd, prevData))
                 prevCmd = ""
@@ -3083,7 +3195,7 @@ def clean_path(element: Element, options: optparse.Values, stats: ScourStats) ->
             prevCmd = cmd
             prevData = data
     # flush last command and data
-    if prevCmd != "":
+    if prevCmd:
         newPath.append((prevCmd, prevData))
     path = newPath
 
@@ -3120,7 +3232,7 @@ def parseListOfPoints(s: str) -> list[Decimal]:
             for j in range(len(negcoords)):
                 # first number could be positive
                 if j == 0:
-                    if negcoords[0] != "":
+                    if negcoords[0]:
                         nums.append(negcoords[0])
                 # otherwise all other strings will be negative
                 else:
@@ -3272,6 +3384,11 @@ def scourCoordinates(
     return ""
 
 
+# =============================================================================
+# Length Scouring and Precision Reduction
+# =============================================================================
+
+
 def scourLength(length: str) -> str:
     """Reduce precision and strip trailing zeros from a length value (may include units)."""
     length = SVGLength(length)
@@ -3279,7 +3396,9 @@ def scourLength(length: str) -> str:
     return scourUnitlessLength(length.value) + Unit.str(length.units)
 
 
-def scourUnitlessLength(length: Decimal | str, renderer_workaround: bool = False, is_control_point: bool = False) -> str:
+def scourUnitlessLength(
+    length: Decimal | str, renderer_workaround: bool = False, is_control_point: bool = False
+) -> str:
     """
     Scours the numeric part of a length only. Does not accept units.
 
@@ -3310,9 +3429,9 @@ def scourUnitlessLength(length: Decimal | str, renderer_workaround: bool = False
     nonsci = "{0:f}".format(length)
     nonsci = "{0:f}".format(initial_length.quantize(Decimal(nonsci)))
     if not renderer_workaround:
-        if len(nonsci) > 2 and nonsci[:2] == "0.":
+        if len(nonsci) > 2 and nonsci.startswith("0."):
             nonsci = nonsci[1:]  # remove the 0, leave the dot
-        elif len(nonsci) > 3 and nonsci[:3] == "-0.":
+        elif len(nonsci) > 3 and nonsci.startswith("-0."):
             nonsci = "-" + nonsci[2:]  # remove the 0, leave the minus and dot
     return_value = nonsci
 
@@ -3356,7 +3475,7 @@ def reducePrecision(element: Element) -> int:
         "stroke-width",
     ]:
         val = element.getAttribute(lengthAttr)
-        if val != "":
+        if val:
             valLen = SVGLength(val)
             if valLen.units != Unit.INVALID:  # not an absolute/relative size or inherit, can be % though
                 newVal = scourLength(val)
@@ -3379,6 +3498,11 @@ def reducePrecision(element: Element) -> int:
             num += reducePrecision(child)
 
     return num
+
+
+# =============================================================================
+# Transform Optimization
+# =============================================================================
 
 
 def optimizeAngle(angle: Decimal) -> Decimal:
@@ -3575,7 +3699,7 @@ def optimizeTransforms(element: Element, options: optparse.Values) -> int:
 
     for transformAttr in ["transform", "patternTransform", "gradientTransform"]:
         val = element.getAttribute(transformAttr)
-        if val != "":
+        if val:
             transform = svg_transform_parser.parse(val)
 
             optimizeTransform(transform)
@@ -3594,6 +3718,11 @@ def optimizeTransforms(element: Element, options: optparse.Values) -> int:
             num += optimizeTransforms(child, options)
 
     return num
+
+
+# =============================================================================
+# Comment Removal and Raster Embedding
+# =============================================================================
 
 
 def remove_comments(element: Element, stats: ScourStats) -> None:
@@ -3621,7 +3750,7 @@ def embed_rasters(element: Element, options: optparse.Values) -> None:
     href = element.getAttributeNS(NS["XLINK"], "href")
 
     # if xlink:href is set, then grab the id
-    if href != "" and len(href) > 1:
+    if href and len(href) > 1:
         ext = os.path.splitext(os.path.basename(href))[1].lower()[1:]
 
         # only operate on files with 'png', 'jpg', and 'gif' file extensions
@@ -3674,12 +3803,12 @@ def embed_rasters(element: Element, options: optparse.Values) -> None:
 
             # TODO: should we remove all images which don't resolve?
             #   then we also have to consider unreachable remote locations (i.e. if there is no internet connection)
-            if rasterdata != "":
+            if rasterdata:
                 # base64-encode raster
                 b64eRaster = base64.b64encode(rasterdata)
 
                 # set href attribute to base64-encoded equivalent
-                if b64eRaster != "":
+                if b64eRaster:
                     # PNG and GIF both have MIME Type 'image/[ext]', but
                     # JPEG has MIME Type 'image/jpeg'
                     if ext == "jpg":
@@ -3689,6 +3818,11 @@ def embed_rasters(element: Element, options: optparse.Values) -> None:
                     num_rasters_embedded += 1
                     del b64eRaster
     return num_rasters_embedded
+
+
+# =============================================================================
+# Document Sizing and Namespace Remapping
+# =============================================================================
 
 
 def properlySizeDoc(docElement: Element, options: optparse.Values) -> None:
@@ -3768,6 +3902,11 @@ def remapNamespacePrefix(node: Element, oldprefix: str, newprefix: str) -> None:
         remapNamespacePrefix(child, oldprefix, newprefix)
 
 
+# =============================================================================
+# XML Serialization
+# =============================================================================
+
+
 def make_well_formed(text: str, quote_dict: dict[str, str] | None = None) -> str:
     """Escape XML special characters in *text* using the given *quote_dict*."""
     if quote_dict is None:
@@ -3794,18 +3933,23 @@ def choose_quote_character(value: str) -> tuple[str, dict[str, str]]:
     return quote, xml_ent
 
 
-TEXT_CONTENT_ELEMENTS = frozenset([
-    "text",
-    "tspan",
-    "tref",
-    "textPath",
-    "altGlyph",
-    "flowDiv",
-    "flowPara",
-    "flowSpan",
-    "flowTref",
-    "flowLine",
-])
+# SVG elements whose text content is significant (whitespace must be preserved).
+# Inside these elements, serializeXML() does not add indentation or strip whitespace.
+# Source: https://www.w3.org/TR/SVG/text.html#WhiteSpace
+TEXT_CONTENT_ELEMENTS = frozenset(
+    [
+        "text",
+        "tspan",
+        "tref",
+        "textPath",
+        "altGlyph",
+        "flowDiv",
+        "flowPara",
+        "flowSpan",
+        "flowTref",
+        "flowLine",
+    ]
+)
 
 
 KNOWN_ATTRS = (
@@ -3872,7 +4016,9 @@ def attributes_ordered_for_output(element: Element) -> list[Any]:
     return sorted((attribute.item(i) for i in range(attribute.length)), key=_attribute_sort_key_function)
 
 
-def serializeXML(element: Element, options: optparse.Values, indent_depth: int = 0, preserveWhitespace: bool = False) -> str:
+def serializeXML(
+    element: Element, options: optparse.Values, indent_depth: int = 0, preserveWhitespace: bool = False
+) -> str:
     """Serialize a DOM tree to an SVG string with pretty-printing and attribute ordering."""
     outParts = []
 
@@ -3904,7 +4050,9 @@ def serializeXML(element: Element, options: optparse.Values, indent_depth: int =
         if attr.prefix is not None:
             outParts.extend([attr.prefix, ":"])
         elif attr.namespaceURI is not None:
-            if attr.namespaceURI == "http://www.w3.org/2000/xmlns/" and attr.nodeName.find("xmlns") == -1:  # pragma: no cover — minidom always includes xmlns in nodeName for namespace declarations
+            if (
+                attr.namespaceURI == "http://www.w3.org/2000/xmlns/" and attr.nodeName.find("xmlns") == -1
+            ):  # pragma: no cover — minidom always includes xmlns in nodeName for namespace declarations
                 outParts.append("xmlns:")
             elif attr.namespaceURI == "http://www.w3.org/1999/xlink":
                 outParts.append("xlink:")
@@ -3968,6 +4116,11 @@ def serializeXML(element: Element, options: optparse.Values, indent_depth: int =
         outParts.extend(["</", element.nodeName, ">"])
 
     return "".join(outParts)
+
+
+# =============================================================================
+# Main Optimization Pipeline
+# =============================================================================
 
 
 def scourString(in_string: str, options: optparse.Values | None = None, stats: ScourStats | None = None) -> str:
@@ -4052,7 +4205,7 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
         attr = attrList.item(i)
         name = attr.nodeName
         val = attr.nodeValue
-        if name[0:6] == "xmlns:":
+        if name.startswith("xmlns:"):
             if val == "http://www.w3.org/2000/svg":
                 redundantPrefixes.append(name[6:])
                 xmlnsDeclsToRemove.append(name)
@@ -4162,18 +4315,42 @@ def scourString(in_string: str, options: optparse.Values | None = None, stats: S
         stats.num_bytes_saved_in_ids += shortenIDs(doc, options.shorten_ids_prefix, options)
 
     # scour lengths (including coordinates) — single DOM traversal instead of 10
-    _LENGTH_SCOUR_TYPES = frozenset([
-        "svg", "image", "rect", "circle", "ellipse", "line",
-        "linearGradient", "radialGradient", "stop", "filter",
-    ])
+    _LENGTH_SCOUR_TYPES = frozenset(
+        [
+            "svg",
+            "image",
+            "rect",
+            "circle",
+            "ellipse",
+            "line",
+            "linearGradient",
+            "radialGradient",
+            "stop",
+            "filter",
+        ]
+    )
     _LENGTH_SCOUR_ATTRS = (
-        "x", "y", "width", "height", "cx", "cy", "r", "rx", "ry",
-        "x1", "y1", "x2", "y2", "fx", "fy", "offset",
+        "x",
+        "y",
+        "width",
+        "height",
+        "cx",
+        "cy",
+        "r",
+        "rx",
+        "ry",
+        "x1",
+        "y1",
+        "x2",
+        "y2",
+        "fx",
+        "fy",
+        "offset",
     )
     for elem in doc.getElementsByTagName("*"):
         if elem.tagName in _LENGTH_SCOUR_TYPES:
             for attr in _LENGTH_SCOUR_ATTRS:
-                if elem.getAttribute(attr) != "":
+                if elem.getAttribute(attr):
                     elem.setAttribute(attr, scourLength(elem.getAttribute(attr)))
     viewBox = doc.documentElement.getAttribute("viewBox")
     if viewBox:
@@ -4250,6 +4427,11 @@ def scourXmlFile(filename: str, options: optparse.Values | None = None, stats: S
             pass
 
     return doc
+
+
+# =============================================================================
+# Command-Line Interface
+# =============================================================================
 
 
 # GZ: Seems most other commandline tools don't do this, is it really wanted?
@@ -4547,7 +4729,12 @@ def parse_args(args: list[str] | None = None, ignore_additional_args: bool = Fal
 
 
 def generateDefaultOptions() -> optparse.Values:
-    """Return default options. Kept for backwards compatibility with Scour API."""
+    """Return default options.
+
+    .. deprecated::
+        Use :func:`sanitizeOptions` instead.  This function is kept for
+        backwards compatibility with the Scour API.
+    """
     return sanitizeOptions()
 
 
@@ -4559,6 +4746,11 @@ def sanitizeOptions(options: optparse.Values | None = None) -> optparse.Values:
     sanitizedOptions._update_careful(optionsDict)
 
     return sanitizedOptions
+
+
+# =============================================================================
+# File I/O and Reporting
+# =============================================================================
 
 
 def maybe_gziped_file(filename: str, mode: str = "r") -> IO[Any]:
@@ -4648,29 +4840,29 @@ def generate_report(stats: ScourStats) -> str:
     )
 
 
-def start(options: optparse.Values, input: IO[Any], output: IO[Any]) -> None:
-    """Run the optimizer: read from *input*, optimize, write to *output*."""
+def start(options: optparse.Values, input_handle: IO[Any], output_handle: IO[Any]) -> None:
+    """Run the optimizer: read from *input_handle*, optimize, write to *output_handle*."""
     # sanitize options (take missing attributes from defaults, discard unknown attributes)
     options = sanitizeOptions(options)
 
-    start = time.time()
+    start_time = time.time()
     stats = ScourStats()
 
     # do the work
-    in_string = input.read()
+    in_string = input_handle.read()
     out_string = scourString(in_string, options, stats=stats).encode("UTF-8")
-    output.write(out_string)
+    output_handle.write(out_string)
 
     # Close input and output files (but do not attempt to close stdin/stdout!)
-    if not ((input is sys.stdin) or (hasattr(sys.stdin, "buffer") and input is sys.stdin.buffer)):
-        input.close()
-    if not ((output is sys.stdout) or (hasattr(sys.stdout, "buffer") and output is sys.stdout.buffer)):
-        output.close()
+    if not ((input_handle is sys.stdin) or (hasattr(sys.stdin, "buffer") and input_handle is sys.stdin.buffer)):
+        input_handle.close()
+    if not ((output_handle is sys.stdout) or (hasattr(sys.stdout, "buffer") and output_handle is sys.stdout.buffer)):
+        output_handle.close()
 
-    end = time.time()
+    end_time = time.time()
 
     # run-time in ms
-    duration = int(round((end - start) * 1000.0))
+    duration = int(round((end_time - start_time) * 1000.0))
 
     oldsize = len(in_string)
     newsize = len(out_string)
@@ -4679,7 +4871,7 @@ def start(options: optparse.Values, input: IO[Any], output: IO[Any]) -> None:
     if not options.quiet:
         print(
             'svg-polish processed file "{}" in {} ms: {}/{} bytes new/orig -> {:.1f}%'.format(
-                input.name, duration, newsize, oldsize, sizediff
+                input_handle.name, duration, newsize, oldsize, sizediff
             ),
             file=options.ensure_value("stdout", sys.stdout),
         )
@@ -4690,8 +4882,8 @@ def start(options: optparse.Values, input: IO[Any], output: IO[Any]) -> None:
 def run() -> None:
     """CLI entry point: parse args, open files, run optimizer, write output."""
     options = parse_args()
-    (input, output) = getInOut(options)
-    start(options, input, output)
+    (input_handle, output_handle) = getInOut(options)
+    start(options, input_handle, output_handle)
 
 
 if __name__ == "__main__":  # pragma: no cover
