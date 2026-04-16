@@ -23,6 +23,7 @@ import urllib.request
 import xml.dom.minidom
 from collections import defaultdict, namedtuple
 from decimal import Context, Decimal, InvalidOperation, getcontext
+from typing import IO, TYPE_CHECKING, Any
 from xml.dom import Node, NotFoundErr
 
 from svg_polish import __version__
@@ -30,6 +31,9 @@ from svg_polish.css import parseCssString
 from svg_polish.stats import ScourStats
 from svg_polish.svg_regex import svg_parser
 from svg_polish.svg_transform import svg_transform_parser
+
+if TYPE_CHECKING:
+    from xml.dom.minidom import Document, Element
 
 APP = "svg-polish"
 VER = __version__
@@ -44,6 +48,7 @@ XML_ENTS_ESCAPE_QUOT['"'] = "&quot;"
 
 # Used to split values where "x y" or "x,y" or a mix of the two is allowed
 RE_COMMA_WSP = re.compile(r"\s*[\s,]\s*")
+_RE_MULTI_SPACE = re.compile(r"  +")
 
 NS = {
     "SVG": "http://www.w3.org/2000/svg",
@@ -86,7 +91,7 @@ unwanted_ns = [
 #     https://www.w3.org/TR/SVGTiny12/attributeTable.html (implemented)
 #     https://www.w3.org/TR/SVG2/propidx.html             (not yet implemented)
 #
-svgAttributes = [
+svgAttributes = frozenset([
     # SVG 1.1
     "alignment-baseline",
     "baseline-shift",
@@ -160,7 +165,7 @@ svgAttributes = [
     "vector-effect",
     "viewport-fill",
     "viewport-fill-opacity",
-]
+])
 
 colors = {
     "aliceblue": "rgb(240, 248, 255)",
@@ -379,11 +384,13 @@ default_properties = {  # excluded all properties with 'auto' as default
 }
 
 
-def is_same_sign(a, b):
+def is_same_sign(a: Decimal, b: Decimal) -> bool:
+    """Return True if *a* and *b* are both non-negative or both non-positive."""
     return (a <= 0 and b <= 0) or (a >= 0 and b >= 0)
 
 
-def is_same_direction(x1, y1, x2, y2):
+def is_same_direction(x1: Decimal, y1: Decimal, x2: Decimal, y2: Decimal) -> bool:
+    """Return True if vectors (x1,y1) and (x2,y2) point in the same direction within scouring precision."""
     if is_same_sign(x1, x2) and is_same_sign(y1, y2):
         diff = y1 / x1 - y2 / x2
         return scouringContext.plus(1 + diff) == 1
@@ -440,7 +447,7 @@ class Unit(object):
     }
 
     #  @staticmethod
-    def get(unitstr):
+    def get(unitstr: str | None) -> int:
         if unitstr is None:
             return Unit.NONE
         try:
@@ -449,7 +456,7 @@ class Unit(object):
             return Unit.INVALID
 
     #  @staticmethod
-    def str(unitint):
+    def str(unitint: int) -> str:
         try:
             return Unit.u2s[unitint]
         except KeyError:
@@ -460,7 +467,7 @@ class Unit(object):
 
 
 class SVGLength(object):
-    def __init__(self, str):
+    def __init__(self, str: str) -> None:
         try:  # simple unitless and no scientific notation
             self.value = float(str)
             if int(self.value) == self.value:
@@ -501,10 +508,8 @@ class SVGLength(object):
                 self.units = Unit.INVALID
 
 
-def findElementsWithId(node, elems=None):
-    """
-    Returns all elements with id attributes
-    """
+def findElementsWithId(node: Element, elems: dict[str, Element] | None = None) -> dict[str, Element]:
+    """Return a mapping of ``{id: element}`` for every element with an ``id`` attribute."""
     if elems is None:
         elems = {}
     id = node.getAttribute("id")
@@ -519,19 +524,16 @@ def findElementsWithId(node, elems=None):
     return elems
 
 
-referencingProps = ["fill", "stroke", "filter", "clip-path", "mask", "marker-start", "marker-end", "marker-mid"]
+referencingProps = frozenset(["fill", "stroke", "filter", "clip-path", "mask", "marker-start", "marker-end", "marker-mid"])
 
 
-def findReferencedElements(node, ids=None):
+def findReferencedElements(node: Element, ids: dict[str, set[Element]] | None = None) -> dict[str, set[Element]]:
+    """Return a mapping of ``{id: {referencing_nodes}}`` for every referenced ID.
+
+    Scans ``xlink:href``, CSS ``url(#…)`` references, and all attributes in
+    :data:`referencingProps`.
     """
-    Returns IDs of all referenced elements
-    - node is the node at which to start the search.
-    - returns a map which has the id as key and
-      each value is is a set of nodes
 
-    Currently looks at 'xlink:href' and all attributes in 'referencingProps'
-    """
-    global referencingProps
     if ids is None:
         ids = {}
     # TODO: input argument ids is clunky here (see below how it is called)
@@ -584,8 +586,8 @@ def findReferencedElements(node, ids=None):
     return ids
 
 
-def findReferencingProperty(node, prop, val, ids):
-    global referencingProps
+def findReferencingProperty(node: Element, prop: str, val: str, ids: dict[str, set[Element]]) -> None:
+    """Record *node* in *ids* if *prop*/*val* contains a ``url(#id)`` reference."""
     if prop in referencingProps and val != "":
         if len(val) >= 7 and val[0:5] == "url(#":
             id = val[5 : val.find(")")]
@@ -609,7 +611,13 @@ def findReferencingProperty(node, prop, val, ids):
                     ids[id] = {node}
 
 
-def removeUnusedDefs(doc, defElem, elemsToRemove=None, referencedIDs=None):
+def removeUnusedDefs(
+    doc: Document,
+    defElem: Element,
+    elemsToRemove: list[Element] | None = None,
+    referencedIDs: dict[str, set[Element]] | None = None,
+) -> list[Element]:
+    """Collect elements inside *defElem* that are not referenced anywhere in *doc*."""
     if elemsToRemove is None:
         elemsToRemove = []
 
@@ -637,19 +645,25 @@ def removeUnusedDefs(doc, defElem, elemsToRemove=None, referencedIDs=None):
     return elemsToRemove
 
 
-def remove_unreferenced_elements(doc, keepDefs, stats):
-    """
-    Removes all unreferenced elements except for <svg>, <font>, <metadata>, <title>, and <desc>.
-    Also vacuums the defs of any non-referenced renderable elements.
+def remove_unreferenced_elements(
+    doc: Document,
+    keepDefs: bool,
+    stats: ScourStats,
+    identifiedElements: dict[str, Element] | None = None,
+    referencedIDs: dict[str, set[Element]] | None = None,
+) -> int:
+    """Remove unreferenced gradients/patterns outside ``<defs>`` and unused elements inside.
 
-    Returns the number of unreferenced elements removed from the document.
+    Returns the number of elements removed.
     """
     num = 0
 
     # Remove certain unreferenced elements outside of defs
     removeTags = ["linearGradient", "radialGradient", "pattern"]
-    identifiedElements = findElementsWithId(doc.documentElement)
-    referencedIDs = findReferencedElements(doc.documentElement)
+    if identifiedElements is None:
+        identifiedElements = findElementsWithId(doc.documentElement)
+    if referencedIDs is None:
+        referencedIDs = findReferencedElements(doc.documentElement)
 
     if not keepDefs:
         # Remove most unreferenced elements inside defs
@@ -677,21 +691,27 @@ def remove_unreferenced_elements(doc, keepDefs, stats):
     return num
 
 
-def shortenIDs(doc, prefix, options):
-    """
-    Shortens ID names used in the document. ID names referenced the most often are assigned the
-    shortest ID names.
+def shortenIDs(
+    doc: Document,
+    prefix: str,
+    options: optparse.Values,
+    identifiedElements: dict[str, Element] | None = None,
+    referencedIDs: dict[str, set[Element]] | None = None,
+) -> int:
+    """Shorten ID names so the most-referenced IDs get the shortest names.
 
-    Returns the number of bytes saved by shortening ID names in the document.
+    Returns the number of bytes saved.
     """
     num = 0
 
-    identifiedElements = findElementsWithId(doc.documentElement)
+    if identifiedElements is None:
+        identifiedElements = findElementsWithId(doc.documentElement)
     # This map contains maps the (original) ID to the nodes referencing it.
     # At the end of this function, it will no longer be valid and while we
     # could keep it up to date, it will complicate the code for no gain
     # (as we do not reuse the data structure beyond this function).
-    referencedIDs = findReferencedElements(doc.documentElement)
+    if referencedIDs is None:
+        referencedIDs = findReferencedElements(doc.documentElement)
 
     # Make idList (list of idnames) sorted by reference count
     # descending, so the highest reference count is first.
@@ -758,7 +778,7 @@ def shortenIDs(doc, prefix, options):
     return num
 
 
-def compute_id_lengths(highest):
+def compute_id_lengths(highest: int) -> Any:
     """Compute how many IDs are available of a given size
 
     Example:
@@ -790,7 +810,7 @@ def compute_id_lengths(highest):
         highest = int((highest - 1) / step)
 
 
-def intToID(idnum, prefix):
+def intToID(idnum: int, prefix: str) -> str:
     """
     Returns the ID name for the given ID number, spreadsheet-style, i.e. from a to z,
     then from aa to az, ba to bz, etc., until zz.
@@ -805,14 +825,15 @@ def intToID(idnum, prefix):
     return prefix + rid
 
 
-def renameID(idFrom, idTo, identifiedElements, referringNodes):
-    """
-    Changes the ID name from idFrom to idTo, on the declaring element
-    as well as all nodes in referringNodes.
+def renameID(
+    idFrom: str,
+    idTo: str,
+    identifiedElements: dict[str, Element],
+    referringNodes: set[Element] | None,
+) -> int:
+    """Rename an element's ID from *idFrom* to *idTo*, updating all references.
 
-    Updates identifiedElements.
-
-    Returns the number of bytes saved by this replacement.
+    Returns the number of bytes saved.
     """
 
     num = 0
@@ -859,6 +880,7 @@ def renameID(idFrom, idTo, identifiedElements, referringNodes):
                 newValue = newValue.replace("url('#" + idFrom + "')", "url(#" + idTo + ")")
                 newValue = newValue.replace('url("#' + idFrom + '")', "url(#" + idTo + ")")
                 node.setAttribute("style", newValue)
+                _invalidateStyleCache(node)
                 num += len(styles) - len(newValue)
 
             # now try the fill, stroke, filter attributes
@@ -874,8 +896,8 @@ def renameID(idFrom, idTo, identifiedElements, referringNodes):
     return num
 
 
-def protected_ids(seenIDs, options):
-    """Return a list of protected IDs out of the seenIDs"""
+def protected_ids(seenIDs: dict[str, Element], options: optparse.Values) -> list[str]:
+    """Return a list of protected IDs out of the seenIDs."""
     protectedIDs = []
     if options.protect_ids_prefix or options.protect_ids_noninkscape or options.protect_ids_list:
         protect_ids_prefixes = []
@@ -898,8 +920,8 @@ def protected_ids(seenIDs, options):
     return protectedIDs
 
 
-def unprotected_ids(doc, options):
-    """Returns a list of unprotected IDs within the document doc."""
+def unprotected_ids(doc: Document, options: optparse.Values) -> dict[str, Element]:
+    """Return identified elements with protected IDs removed."""
     identifiedElements = findElementsWithId(doc.documentElement)
     protectedIDs = protected_ids(identifiedElements, options)
     if protectedIDs:
@@ -908,11 +930,10 @@ def unprotected_ids(doc, options):
     return identifiedElements
 
 
-def remove_unreferenced_ids(referencedIDs, identifiedElements):
-    """
-    Removes the unreferenced ID attributes.
+def remove_unreferenced_ids(referencedIDs: dict[str, set[Element]], identifiedElements: dict[str, Element]) -> int:
+    """Remove ``id`` attributes that are not referenced anywhere.
 
-    Returns the number of ID attributes removed
+    Returns the number of ID attributes removed.
     """
     keepTags = ["font"]
     num = 0
@@ -924,7 +945,8 @@ def remove_unreferenced_ids(referencedIDs, identifiedElements):
     return num
 
 
-def removeNamespacedAttributes(node, namespaces):
+def removeNamespacedAttributes(node: Element, namespaces: list[str]) -> int:
+    """Remove all attributes belonging to any of the given *namespaces*."""
     num = 0
     if node.nodeType == Node.ELEMENT_NODE:
         # remove all namespace'd attributes from this element
@@ -944,7 +966,8 @@ def removeNamespacedAttributes(node, namespaces):
     return num
 
 
-def removeNamespacedElements(node, namespaces):
+def removeNamespacedElements(node: Element, namespaces: list[str]) -> int:
+    """Remove all child elements belonging to any of the given *namespaces*."""
     num = 0
     if node.nodeType == Node.ELEMENT_NODE:
         # remove all namespace'd child nodes from this element
@@ -963,7 +986,8 @@ def removeNamespacedElements(node, namespaces):
     return num
 
 
-def remove_descriptive_elements(doc, options):
+def remove_descriptive_elements(doc: Document, options: optparse.Values) -> int:
+    """Remove ``<title>``, ``<desc>``, and ``<metadata>`` elements when requested by options."""
     elementTypes = []
     if options.remove_descriptive_elements:
         elementTypes.extend(("title", "desc", "metadata"))
@@ -987,8 +1011,8 @@ def remove_descriptive_elements(doc, options):
     return len(elementsToRemove)
 
 
-def g_tag_is_mergeable(node):
-    """Check if a <g> tag can be merged or not
+def g_tag_is_mergeable(node: Element) -> bool:
+    """Check if a ``<g>`` tag can be merged into its parent.
 
     <g> tags with a title or descriptions should generally be left alone.
     """
@@ -1001,9 +1025,10 @@ def g_tag_is_mergeable(node):
     return True
 
 
-def remove_nested_groups(node, stats):
-    """
-    This walks further and further down the tree, removing groups
+def remove_nested_groups(node: Element, stats: ScourStats) -> int:
+    """Remove unnecessary nested ``<g>`` elements.
+
+    Walks the tree removing groups
     which do not have any attributes or a title/desc child and
     promoting their children up one level
     """
@@ -1034,9 +1059,10 @@ def remove_nested_groups(node, stats):
     return num
 
 
-def moveCommonAttributesToParentGroup(elem, referencedElements):
-    """
-    This recursively calls this function on all children of the passed in element
+def moveCommonAttributesToParentGroup(elem: Element, referencedElements: dict[str, set[Element]]) -> int:
+    """Move attributes shared by all children up to a parent ``<g>`` element.
+
+    Recursively calls this function on all children of the passed in element
     and then iterates over all child elements and removes common inheritable attributes
     from the children and places them in the parent group.  But only if the parent contains
     nothing but element children and whitespace.  The attributes are only removed from the
@@ -1138,9 +1164,8 @@ def moveCommonAttributesToParentGroup(elem, referencedElements):
     return num
 
 
-def mergeSiblingGroupsWithCommonAttributes(elem):
-    """
-    Merge two or more sibling <g> elements with the identical attributes.
+def mergeSiblingGroupsWithCommonAttributes(elem: Element) -> int:
+    """Merge consecutive sibling ``<g>`` elements that share identical attributes.
 
     This function acts recursively on the given element.
     """
@@ -1209,10 +1234,8 @@ def mergeSiblingGroupsWithCommonAttributes(elem):
     return num
 
 
-def create_groups_for_common_attributes(elem, stats):
-    """
-    Creates <g> elements to contain runs of 3 or more
-    consecutive child elements having at least one common attribute.
+def create_groups_for_common_attributes(elem: Element, stats: ScourStats) -> None:
+    """Create ``<g>`` wrappers around runs of 3+ children sharing a common attribute.
 
     Common attributes are not promoted to the <g> by this function.
     This is handled by moveCommonAttributesToParentGroup.
@@ -1392,10 +1415,10 @@ def create_groups_for_common_attributes(elem, stats):
             create_groups_for_common_attributes(childNode, stats)
 
 
-def removeUnusedAttributesOnParent(elem):
-    """
-    This recursively calls this function on all children of the element passed in,
-    then removes any unused attributes on this elem if none of the children inherit it
+def removeUnusedAttributesOnParent(elem: Element) -> int:
+    """Remove inheritable attributes from a parent that no child actually inherits.
+
+    Recursively processes all children, then checks this element's attributes.
     """
     num = 0
 
@@ -1467,7 +1490,8 @@ def removeUnusedAttributesOnParent(elem):
     return num
 
 
-def remove_duplicate_gradient_stops(doc, stats):
+def remove_duplicate_gradient_stops(doc: Document, stats: ScourStats) -> int:
+    """Remove consecutive duplicate ``<stop>`` elements inside gradients."""
     num = 0
 
     for gradType in ["linearGradient", "radialGradient"]:
@@ -1506,13 +1530,22 @@ def remove_duplicate_gradient_stops(doc, stats):
     return num
 
 
-def collapse_singly_referenced_gradients(doc, stats):
+def collapse_singly_referenced_gradients(
+    doc: Document,
+    stats: ScourStats,
+    identifiedElements: dict[str, Element] | None = None,
+    referencedIDs: dict[str, set[Element]] | None = None,
+) -> int:
+    """Merge gradients that are referenced by exactly one other gradient into their parent."""
     num = 0
 
-    identifiedElements = findElementsWithId(doc.documentElement)
+    if identifiedElements is None:
+        identifiedElements = findElementsWithId(doc.documentElement)
+    if referencedIDs is None:
+        referencedIDs = findReferencedElements(doc.documentElement)
 
     # make sure to reset the ref'ed ids for when we are running this in testscour
-    for rid, nodes in findReferencedElements(doc.documentElement).items():
+    for rid, nodes in referencedIDs.items():
         # Make sure that there's actually a defining element for the current ID name.
         # (Cyn: I've seen documents with #id references but no element with that ID!)
         if len(nodes) == 1 and rid in identifiedElements:
@@ -1577,7 +1610,10 @@ def collapse_singly_referenced_gradients(doc, stats):
     return num
 
 
-def computeGradientBucketKey(grad):
+def computeGradientBucketKey(grad: Element) -> str:
+    """Compute a hashable key for duplicate-gradient detection.
+
+    Two gradients with the same key have identical stops, attributes, and href targets."""
     # Compute a key (hashable opaque value; here a string) from each
     # gradient such that "key(grad1) == key(grad2)" is the same as
     # saying that grad1 is a duplicate of grad2.
@@ -1615,8 +1651,8 @@ def computeGradientBucketKey(grad):
     return "\x1e".join(subKeys)
 
 
-def detect_duplicate_gradients(*grad_lists):
-    """Detects duplicate gradients from each iterable/generator given as argument
+def detect_duplicate_gradients(*grad_lists: Any) -> Any:
+    """Detect duplicate gradients from each iterable/generator given as argument.
 
     Yields (master, master_id, duplicates_id, duplicates) tuples where:
       * master_id: The ID attribute of the master element.  This will always be non-empty
@@ -1662,7 +1698,13 @@ def detect_duplicate_gradients(*grad_lists):
             yield master_id, duplicates_ids, duplicates
 
 
-def dedup_gradient(master_id, duplicates_ids, duplicates, referenced_ids):
+def dedup_gradient(
+    master_id: str,
+    duplicates_ids: list[str],
+    duplicates: list[Element],
+    referenced_ids: dict[str, set[Element]],
+) -> None:
+    """Replace all references to *duplicates* with references to *master_id*."""
     func_iri = None
     for dup_id, dup_grad in zip(duplicates_ids, duplicates):
         # if the duplicate gradient no longer has a parent that means it was
@@ -1718,12 +1760,13 @@ def dedup_gradient(master_id, duplicates_ids, duplicates, referenced_ids):
         referenced_ids[master_id] = master_references
 
 
-def removeDuplicateGradients(doc):
+def removeDuplicateGradients(doc: Document, referencedIDs: dict[str, set[Element]] | None = None) -> int:
+    """Detect and remove duplicate linear/radial gradients, updating all references."""
     prev_num = -1
     num = 0
 
     # get a collection of all elements that are referenced and their referencing elements
-    referenced_ids = findReferencedElements(doc.documentElement)
+    referenced_ids = referencedIDs if referencedIDs is not None else findReferencedElements(doc.documentElement)
 
     while prev_num != num:
         prev_num = num
@@ -1738,25 +1781,33 @@ def removeDuplicateGradients(doc):
     return num
 
 
-def _getStyle(node):
-    """Returns the style attribute of a node as a dictionary."""
+def _getStyle(node: Element) -> dict[str, str]:
+    """Return the ``style`` attribute of *node* as a ``{property: value}`` dict.
+
+    Results are cached on the node to avoid repeated string parsing.
+    The cache is invalidated by ``_setStyle`` and ``_invalidateStyleCache``.
+    """
     if node.nodeType != Node.ELEMENT_NODE:
         return {}
+    cached = getattr(node, "_cachedStyle", None)
+    if cached is not None:
+        return cached
     style_attribute = node.getAttribute("style")
     if style_attribute:
         styleMap = {}
-        rawStyles = style_attribute.split(";")
-        for style in rawStyles:
+        for style in style_attribute.split(";"):
             propval = style.split(":")
             if len(propval) == 2:
                 styleMap[propval[0].strip()] = propval[1].strip()
+        node._cachedStyle = styleMap
         return styleMap
-    else:
-        return {}
+    node._cachedStyle = {}
+    return node._cachedStyle
 
 
-def _setStyle(node, styleMap):
-    """Sets the style attribute of a node to the dictionary ``styleMap``."""
+def _setStyle(node: Element, styleMap: dict[str, str]) -> Element:
+    """Set the ``style`` attribute of *node* from *styleMap* and update the cache."""
+    node._cachedStyle = styleMap
     fixedStyle = ";".join(prop + ":" + styleMap[prop] for prop in styleMap)
     if fixedStyle != "":
         node.setAttribute("style", fixedStyle)
@@ -1765,7 +1816,13 @@ def _setStyle(node, styleMap):
     return node
 
 
-def repairStyle(node, options):
+def _invalidateStyleCache(node: Element) -> None:
+    """Clear the cached style dict so the next ``_getStyle`` re-parses."""
+    node._cachedStyle = None
+
+
+def repairStyle(node: Element, options: optparse.Values) -> int:
+    """Fix broken style declarations (e.g. missing colons) and convert styles to XML attributes."""
     num = 0
     styleMap = _getStyle(node)
     if styleMap:
@@ -1942,12 +1999,10 @@ def repairStyle(node, options):
     return num
 
 
-def styleInheritedFromParent(node, style):
-    """
-    Returns the value of 'style' that is inherited from the parents of the passed-in node
+def styleInheritedFromParent(node: Element, style: str) -> str | None:
+    """Return the inherited value of *style* from ancestor elements, or ``None``.
 
-    Warning: This method only considers presentation attributes and inline styles,
-             any style sheets are ignored!
+    Warning: only considers presentation attributes and inline styles — style sheets are ignored.
     """
     parentNode = node.parentNode
 
@@ -1971,12 +2026,10 @@ def styleInheritedFromParent(node, style):
     return styleInheritedFromParent(parentNode, style)
 
 
-def styleInheritedByChild(node, style, nodeIsChild=False):
-    """
-    Returns whether 'style' is inherited by any children of the passed-in node
+def styleInheritedByChild(node: Element, style: str, nodeIsChild: bool = False) -> bool:
+    """Return whether *style* is inherited by any child of *node*.
 
-    If False is returned, it is guaranteed that 'style' can safely be removed
-    from the passed-in node without influencing visual output of it's children
+    If ``False``, the style can safely be removed from *node* without affecting rendering.
 
     If True is returned, the passed-in node should not have its text-based
     attributes removed.
@@ -2032,10 +2085,8 @@ def styleInheritedByChild(node, style, nodeIsChild=False):
     return True
 
 
-def mayContainTextNodes(node):
-    """
-    Returns True if the passed-in node is probably a text element, or at least
-    one of its descendants is probably a text element.
+def mayContainTextNodes(node: Element) -> bool:
+    """Return ``True`` if *node* (or any descendant) may render text content.
 
     If False is returned, it is guaranteed that the passed-in node has no
     business having text-based attributes.
@@ -2338,10 +2389,8 @@ for default_attribute in default_attributes:
             default_attributes_per_element[element].append(default_attribute)
 
 
-def taint(taintedSet, taintedAttribute):
-    """Adds an attribute to a set of attributes.
-
-    Related attributes are also included."""
+def taint(taintedSet: set[str], taintedAttribute: str) -> set[str]:
+    """Add *taintedAttribute* (and related attributes) to *taintedSet*."""
     taintedSet.add(taintedAttribute)
     if taintedAttribute == "marker":
         taintedSet |= set(["marker-start", "marker-mid", "marker-end"])
@@ -2350,11 +2399,10 @@ def taint(taintedSet, taintedAttribute):
     return taintedSet
 
 
-def removeDefaultAttributeValue(node, attribute):
-    """
-    Removes the DefaultAttribute 'attribute' from 'node' if specified conditions are fulfilled
+def removeDefaultAttributeValue(node: Element, attribute: Any) -> int:
+    """Remove a ``DefaultAttribute`` from *node* if it matches the default value.
 
-    Warning: Does NOT check if the attribute is actually valid for the passed element type for increased performance!
+    Returns 1 if removed, 0 otherwise.
     """
     if not node.hasAttribute(attribute.name):
         return 0
@@ -2382,10 +2430,11 @@ def removeDefaultAttributeValue(node, attribute):
     return 0
 
 
-def removeDefaultAttributeValues(node, options, tainted=None):
-    """'tainted' keeps a set of attributes defined in parent nodes.
+def removeDefaultAttributeValues(node: Element, options: optparse.Values, tainted: set[str] | None = None) -> int:
+    """Remove attributes that match their CSS/SVG default values.
 
-    For such attributes, we don't delete attributes with default values."""
+    *tainted* tracks attributes set by ancestors — those are not removed even if default-valued.
+    """
     num = 0
     if node.nodeType != Node.ELEMENT_NODE:
         return 0
@@ -2436,15 +2485,26 @@ def removeDefaultAttributeValues(node, options, tainted=None):
 rgb = re.compile(r"\s*rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\s*")
 rgbp = re.compile(r"\s*rgb\(\s*(\d*\.?\d+)%\s*,\s*(\d*\.?\d+)%\s*,\s*(\d*\.?\d+)%\s*\)\s*")
 
+# Pre-computed name->hex mapping: avoids regex parsing for named colors.
+# Built once at import time from the `colors` dict.
+_name_to_hex = {}
+for _name, _rgb_str in colors.items():
+    _m = rgb.match(_rgb_str)
+    if _m:
+        _r, _g, _b = int(_m.group(1)), int(_m.group(2)), int(_m.group(3))
+        _hex = "#%02x%02x%02x" % (_r, _g, _b)
+        if len(_hex) == 7 and _hex[1] == _hex[2] and _hex[3] == _hex[4] and _hex[5] == _hex[6]:
+            _hex = "#" + _hex[1] + _hex[3] + _hex[5]
+        _name_to_hex[_name] = _hex
 
-def convertColor(value):
-    """
-    Converts the input color string and returns a #RRGGBB (or #RGB if possible) string
-    """
+
+def convertColor(value: str) -> str:
+    """Convert a color value (name, ``rgb()``, or hex) to the shortest hex form."""
+    # Fast path: named color already resolved to hex at import time
+    if value in _name_to_hex:
+        return _name_to_hex[value]
+
     s = value
-
-    if s in colors:
-        s = colors[s]
 
     rgbpMatch = rgbp.match(s)
     if rgbpMatch is not None:
@@ -2468,10 +2528,8 @@ def convertColor(value):
     return s
 
 
-def convertColors(element):
-    """
-    Recursively converts all color properties into #RRGGBB format if shorter
-    """
+def convertColors(element: Element) -> int:
+    """Recursively convert all color properties to shorter hex format. Returns bytes saved."""
     numBytes = 0
 
     if element.nodeType != Node.ELEMENT_NODE:
@@ -2520,9 +2578,12 @@ def convertColors(element):
 #       reusing data structures, etc
 
 
-def clean_path(element, options, stats):
-    """
-    Cleans the path string (d attribute) of the element
+def clean_path(element: Element, options: optparse.Values, stats: ScourStats) -> None:
+    """Optimize the ``d`` attribute of a ``<path>`` element.
+
+    Converts absolute coords to relative, removes empty segments, collapses
+    same-direction runs, converts curves to lines where possible, and shortens
+    Bezier/quadratic commands to ``s``/``t`` shorthand.
     """
 
     # this gets the parser object from svg_regex.py
@@ -2657,48 +2718,57 @@ def clean_path(element, options, stats):
     # Reuse the data structure 'path' and the coordinate lists, even if we're
     # deleting items, because these deletions are relatively cheap.
     if not has_round_or_square_linecaps:
-        # remove empty path segments
+        # remove empty path segments — O(n) list building instead of O(n²) del
         for pathIndex in range(len(path)):
             cmd, data = path[pathIndex]
-            i = 0
             if cmd in ["m", "l", "t"]:
-                if cmd == "m":
-                    # It might be tempting to rewrite "m0 0 ..." into
-                    # "l..." here.  However, this is an unsound
-                    # optimization in general as "m0 0 ... z" is
-                    # different from "l...z".
-                    #
-                    # To do such a rewrite, we need to understand the
-                    # full subpath.  This logic happens after this
-                    # loop.
-                    i = 2
-                while i < len(data):
-                    if data[i] == data[i + 1] == 0:
-                        del data[i : i + 2]
-                        stats.num_path_segments_removed += 1
+                # m: skip first pair (moveto coords), start filtering from index 2
+                # l, t: filter from index 0
+                start = 2 if cmd == "m" else 0
+                newData = data[:start]
+                removed = 0
+                for j in range(start, len(data), 2):
+                    if data[j] == data[j + 1] == 0:
+                        removed += 1
                     else:
-                        i += 2
+                        newData.append(data[j])
+                        newData.append(data[j + 1])
+                if removed:
+                    data[:] = newData
+                    stats.num_path_segments_removed += removed
             elif cmd == "c":
-                while i < len(data):
-                    if data[i] == data[i + 1] == data[i + 2] == data[i + 3] == data[i + 4] == data[i + 5] == 0:
-                        del data[i : i + 6]
-                        stats.num_path_segments_removed += 1
+                newData = []
+                removed = 0
+                for j in range(0, len(data), 6):
+                    if data[j] == data[j + 1] == data[j + 2] == data[j + 3] == data[j + 4] == data[j + 5] == 0:
+                        removed += 1
                     else:
-                        i += 6
+                        newData.extend(data[j : j + 6])
+                if removed:
+                    data[:] = newData
+                    stats.num_path_segments_removed += removed
             elif cmd == "a":
-                while i < len(data):
-                    if data[i + 5] == data[i + 6] == 0:
-                        del data[i : i + 7]
-                        stats.num_path_segments_removed += 1
+                newData = []
+                removed = 0
+                for j in range(0, len(data), 7):
+                    if data[j + 5] == data[j + 6] == 0:
+                        removed += 1
                     else:
-                        i += 7
+                        newData.extend(data[j : j + 7])
+                if removed:
+                    data[:] = newData
+                    stats.num_path_segments_removed += removed
             elif cmd == "q":
-                while i < len(data):
-                    if data[i] == data[i + 1] == data[i + 2] == data[i + 3] == 0:
-                        del data[i : i + 4]
-                        stats.num_path_segments_removed += 1
+                newData = []
+                removed = 0
+                for j in range(0, len(data), 4):
+                    if data[j] == data[j + 1] == data[j + 2] == data[j + 3] == 0:
+                        removed += 1
                     else:
-                        i += 4
+                        newData.extend(data[j : j + 4])
+                if removed:
+                    data[:] = newData
+                    stats.num_path_segments_removed += removed
             elif cmd in ["h", "v"]:
                 oldLen = len(data)
                 path[pathIndex] = (cmd, [coord for coord in data if coord != 0])
@@ -2940,46 +3010,56 @@ def clean_path(element, options, stats):
     # Reuse the data structure 'path', since we're not adding or removing subcommands.
     # Also reuse the coordinate lists, even if we're deleting items, because these
     # deletions are relatively cheap.
+    # Collapse consecutive coordinates running in same direction — O(n) list building
     if not has_intermediate_markers:
         for pathIndex in range(len(path)):
             cmd, data = path[pathIndex]
 
-            # h / v expects only one parameter and we start drawing with the first (so we need at least 2)
+            # h / v: collapse same-sign consecutive values
             if cmd in ["h", "v"] and len(data) >= 2:
-                coordIndex = 0
-                while coordIndex + 1 < len(data):
-                    if is_same_sign(data[coordIndex], data[coordIndex + 1]):
-                        data[coordIndex] += data[coordIndex + 1]
-                        del data[coordIndex + 1]
-                        stats.num_path_segments_removed += 1
+                newData = [data[0]]
+                removed = 0
+                for j in range(1, len(data)):
+                    if is_same_sign(newData[-1], data[j]):
+                        newData[-1] += data[j]
+                        removed += 1
                     else:
-                        coordIndex += 1
+                        newData.append(data[j])
+                if removed:
+                    data[:] = newData
+                    stats.num_path_segments_removed += removed
 
-            # l expects two parameters and we start drawing with the first (so we need at least 4)
+            # l: collapse same-direction consecutive pairs
             elif cmd == "l" and len(data) >= 4:
-                coordIndex = 0
-                while coordIndex + 2 < len(data):
-                    if is_same_direction(*data[coordIndex : coordIndex + 4]):
-                        data[coordIndex] += data[coordIndex + 2]
-                        data[coordIndex + 1] += data[coordIndex + 3]
-                        del data[coordIndex + 2]  # delete the next two elements
-                        del data[coordIndex + 2]
-                        stats.num_path_segments_removed += 1
+                newData = [data[0], data[1]]
+                removed = 0
+                for j in range(2, len(data), 2):
+                    if is_same_direction(newData[-2], newData[-1], data[j], data[j + 1]):
+                        newData[-2] += data[j]
+                        newData[-1] += data[j + 1]
+                        removed += 1
                     else:
-                        coordIndex += 2
+                        newData.append(data[j])
+                        newData.append(data[j + 1])
+                if removed:
+                    data[:] = newData
+                    stats.num_path_segments_removed += removed
 
-            # m expects two parameters but we have to skip the first pair as it's not drawn (so we need at least 6)
+            # m: skip first pair (moveto), collapse rest
             elif cmd == "m" and len(data) >= 6:
-                coordIndex = 2
-                while coordIndex + 2 < len(data):
-                    if is_same_direction(*data[coordIndex : coordIndex + 4]):
-                        data[coordIndex] += data[coordIndex + 2]
-                        data[coordIndex + 1] += data[coordIndex + 3]
-                        del data[coordIndex + 2]  # delete the next two elements
-                        del data[coordIndex + 2]
-                        stats.num_path_segments_removed += 1
+                newData = [data[0], data[1], data[2], data[3]]
+                removed = 0
+                for j in range(4, len(data), 2):
+                    if is_same_direction(newData[-2], newData[-1], data[j], data[j + 1]):
+                        newData[-2] += data[j]
+                        newData[-1] += data[j + 1]
+                        removed += 1
                     else:
-                        coordIndex += 2
+                        newData.append(data[j])
+                        newData.append(data[j + 1])
+                if removed:
+                    data[:] = newData
+                    stats.num_path_segments_removed += removed
 
     # it is possible that we have consecutive h, v, c, t commands now
     # so again collapse all consecutive commands of the same type into one command
@@ -3016,12 +3096,8 @@ def clean_path(element, options, stats):
         element.setAttribute("d", newPathStr)
 
 
-def parseListOfPoints(s):
-    """
-    Parse string into a list of points.
-
-    Returns a list containing an even number of coordinate strings
-    """
+def parseListOfPoints(s: str) -> list[Decimal]:
+    """Parse a space/comma-separated point list into a flat list of ``Decimal`` coordinates."""
     i = 0
 
     # (wsp)? comma-or-wsp-separated coordinate pairs (wsp)?
@@ -3076,10 +3152,8 @@ def parseListOfPoints(s):
     return nums
 
 
-def clean_polygon(elem, options):
-    """
-    Remove unnecessary closing point of polygon points attribute
-    """
+def clean_polygon(elem: Element, options: optparse.Values) -> int:
+    """Remove the redundant closing point from a ``<polygon>`` if it duplicates the first."""
     num_points_removed_from_polygon = 0
 
     pts = parseListOfPoints(elem.getAttribute("points"))
@@ -3094,7 +3168,7 @@ def clean_polygon(elem, options):
     return num_points_removed_from_polygon
 
 
-def cleanPolyline(elem, options):
+def cleanPolyline(elem: Element, options: optparse.Values) -> None:
     """
     Scour the polyline points attribute
     """
@@ -3102,12 +3176,8 @@ def cleanPolyline(elem, options):
     elem.setAttribute("points", scourCoordinates(pts, options, True))
 
 
-def controlPoints(cmd, data):
-    """
-    Checks if there are control points in the path data
-
-    Returns the indices of all values in the path data which are control points
-    """
+def controlPoints(cmd: str, data: list[Decimal]) -> list[int]:
+    """Return indices of control-point values in *data* for path command *cmd*."""
     cmd = cmd.lower()
     if cmd in ["c", "s", "q"]:
         indices = range(len(data))
@@ -3119,12 +3189,8 @@ def controlPoints(cmd, data):
     return []
 
 
-def flags(cmd, data):
-    """
-    Checks if there are flags in the path data
-
-    Returns the indices of all values in the path data which are flags
-    """
+def flags(cmd: str, data: list[Decimal]) -> list[int]:
+    """Return indices of arc-flag values in *data* for path command *cmd*."""
     if cmd.lower() == "a":  # a: (rx ry x-axis-rotation large-arc-flag sweep-flag x y)+
         indices = range(len(data))
         return [index for index in indices if (index % 7) in [3, 4]]
@@ -3132,10 +3198,8 @@ def flags(cmd, data):
     return []
 
 
-def serializePath(pathObj, options):
-    """
-    Reserializes the path data with some cleanups.
-    """
+def serializePath(pathObj: list[tuple[str, list[Decimal]]], options: optparse.Values) -> str:
+    """Serialize optimized path data back to a ``d`` attribute string."""
     # elliptical arc commands must have comma/wsp separating the coordinates
     # this fixes an issue outlined in Fix https://bugs.launchpad.net/scour/+bug/412754
     return "".join(
@@ -3144,24 +3208,22 @@ def serializePath(pathObj, options):
     )
 
 
-def serializeTransform(transformObj):
-    """
-    Reserializes the transform data with some cleanups.
-    """
+def serializeTransform(transformObj: list[tuple[str, list[Decimal]]]) -> str:
+    """Serialize optimized transform data back to a ``transform`` attribute string."""
     return " ".join(
         command + "(" + " ".join(scourUnitlessLength(number) for number in numbers) + ")"
         for command, numbers in transformObj
     )
 
 
-def scourCoordinates(data, options, force_whitespace=False, control_points=[], flags=[]):
-    """
-    Serializes coordinate data with some cleanups:
-       - removes all trailing zeros after the decimal
-       - integerize coordinates if possible
-       - removes extraneous whitespace
-       - adds spaces between values in a subcommand if required (or if force_whitespace is True)
-    """
+def scourCoordinates(
+    data: list[Decimal],
+    options: optparse.Values,
+    force_whitespace: bool = False,
+    control_points: list[int] = [],
+    flags: list[int] = [],
+) -> str:
+    """Serialize coordinate data with minimal whitespace and reduced precision."""
     if data is not None:
         newData = []
         c = 0
@@ -3210,16 +3272,14 @@ def scourCoordinates(data, options, force_whitespace=False, control_points=[], f
     return ""
 
 
-def scourLength(length):
-    """
-    Scours a length. Accepts units.
-    """
+def scourLength(length: str) -> str:
+    """Reduce precision and strip trailing zeros from a length value (may include units)."""
     length = SVGLength(length)
 
     return scourUnitlessLength(length.value) + Unit.str(length.units)
 
 
-def scourUnitlessLength(length, renderer_workaround=False, is_control_point=False):  # length is of a numeric type
+def scourUnitlessLength(length: Decimal | str, renderer_workaround: bool = False, is_control_point: bool = False) -> str:
     """
     Scours the numeric part of a length only. Does not accept units.
 
@@ -3272,15 +3332,8 @@ def scourUnitlessLength(length, renderer_workaround=False, is_control_point=Fals
     return return_value
 
 
-def reducePrecision(element):
-    """
-    Because opacities, letter spacings, stroke widths and all that don't need
-    to be preserved in SVG files with 9 digits of precision.
-
-    Takes all of these attributes, in the given element node and its children,
-    and reduces their precision to the current Decimal context's precision.
-    Also checks for the attributes actually being lengths, not 'inherit', 'none'
-    or anything that isn't an SVGLength.
+def reducePrecision(element: Element) -> int:
+    """Reduce decimal precision of style-related length attributes (opacity, stroke-width, etc.).
 
     Returns the number of bytes saved after performing these reductions.
     """
@@ -3328,8 +3381,9 @@ def reducePrecision(element):
     return num
 
 
-def optimizeAngle(angle):
-    """
+def optimizeAngle(angle: Decimal) -> Decimal:
+    """Normalize a rotation angle to ``[-90, 270)`` for shortest representation.
+
     Because any rotation can be expressed within 360 degrees
     of any given number, and since negative angles sometimes
     are one character longer than corresponding positive angle,
@@ -3354,13 +3408,8 @@ def optimizeAngle(angle):
     return angle
 
 
-def optimizeTransform(transform):
-    """
-    Optimises a series of transformations parsed from a single
-    transform="" attribute.
-
-    The transformation list is modified in-place.
-    """
+def optimizeTransform(transform: list[tuple[str, list[Decimal]]]) -> None:
+    """Optimize a parsed transform list in-place (fold identity ops, simplify matrices)."""
     # FIXME: reordering these would optimize even more cases:
     #   first: Fold consecutive runs of the same transformation
     #   extra: Attempt to cast between types to create sameness:
@@ -3517,9 +3566,8 @@ def optimizeTransform(transform):
             i += 1
 
 
-def optimizeTransforms(element, options):
-    """
-    Attempts to optimise transform specifications on the given node and its children.
+def optimizeTransforms(element: Element, options: optparse.Values) -> int:
+    """Optimize ``transform`` attributes on *element* and all descendants.
 
     Returns the number of bytes saved after performing these reductions.
     """
@@ -3548,10 +3596,8 @@ def optimizeTransforms(element, options):
     return num
 
 
-def remove_comments(element, stats):
-    """
-    Removes comments from the element and its children.
-    """
+def remove_comments(element: Element, stats: ScourStats) -> None:
+    """Remove XML comment nodes from *element* and its children."""
 
     if isinstance(element, xml.dom.minidom.Comment):
         stats.num_bytes_saved_in_comments += len(element.data)
@@ -3562,7 +3608,8 @@ def remove_comments(element, stats):
             remove_comments(subelement, stats)
 
 
-def embed_rasters(element, options):
+def embed_rasters(element: Element, options: optparse.Values) -> None:
+    """Convert external raster image references to inline base64 data URIs."""
     import base64
 
     """
@@ -3644,7 +3691,8 @@ def embed_rasters(element, options):
     return num_rasters_embedded
 
 
-def properlySizeDoc(docElement, options):
+def properlySizeDoc(docElement: Element, options: optparse.Values) -> None:
+    """Add ``viewBox`` and optionally remove ``width``/``height`` when ``--enable-viewboxing`` is set."""
     # get doc width and height
     w = SVGLength(docElement.getAttribute("width"))
     h = SVGLength(docElement.getAttribute("height"))
@@ -3683,7 +3731,8 @@ def properlySizeDoc(docElement, options):
     docElement.removeAttribute("height")
 
 
-def remapNamespacePrefix(node, oldprefix, newprefix):
+def remapNamespacePrefix(node: Element, oldprefix: str, newprefix: str) -> None:
+    """Recursively rename namespace prefix *oldprefix* to *newprefix* in the DOM subtree."""
     if node is None or node.nodeType != Node.ELEMENT_NODE:
         return
 
@@ -3719,7 +3768,8 @@ def remapNamespacePrefix(node, oldprefix, newprefix):
         remapNamespacePrefix(child, oldprefix, newprefix)
 
 
-def make_well_formed(text, quote_dict=None):
+def make_well_formed(text: str, quote_dict: dict[str, str] | None = None) -> str:
+    """Escape XML special characters in *text* using the given *quote_dict*."""
     if quote_dict is None:
         quote_dict = XML_ENTS_NO_QUOTES
     if not any(c in text for c in quote_dict):
@@ -3730,7 +3780,8 @@ def make_well_formed(text, quote_dict=None):
     return "".join(quote_dict[c] if c in quote_dict else c for c in text)
 
 
-def choose_quote_character(value):
+def choose_quote_character(value: str) -> tuple[str, dict[str, str]]:
+    """Pick ``"`` or ``'`` as attribute quote character, whichever needs fewer escapes."""
     quot_count = value.count('"')
     if quot_count == 0 or quot_count <= value.count("'"):
         # Fewest "-symbols (if there are 0, we pick this to avoid spending
@@ -3743,7 +3794,7 @@ def choose_quote_character(value):
     return quote, xml_ent
 
 
-TEXT_CONTENT_ELEMENTS = [
+TEXT_CONTENT_ELEMENTS = frozenset([
     "text",
     "tspan",
     "tref",
@@ -3754,7 +3805,7 @@ TEXT_CONTENT_ELEMENTS = [
     "flowSpan",
     "flowTref",
     "flowLine",
-]
+])
 
 
 KNOWN_ATTRS = (
@@ -3802,13 +3853,15 @@ KNOWN_ATTRS_ORDER_BY_NAME = defaultdict(
 
 
 # use custom order for known attributes and alphabetical order for the rest
-def _attribute_sort_key_function(attribute):
+def _attribute_sort_key_function(attribute: Any) -> tuple[int, str]:
+    """Sort key: known SVG attributes first (by canonical order), then alphabetical."""
     name = attribute.name
     order_value = KNOWN_ATTRS_ORDER_BY_NAME[name]
     return order_value, name
 
 
-def attributes_ordered_for_output(element):
+def attributes_ordered_for_output(element: Element) -> list[Any]:
+    """Return the element's attributes sorted in canonical SVG output order."""
     if not element.hasAttributes():
         return []
     attribute = element.attributes
@@ -3819,11 +3872,8 @@ def attributes_ordered_for_output(element):
     return sorted((attribute.item(i) for i in range(attribute.length)), key=_attribute_sort_key_function)
 
 
-# hand-rolled serialization function that has the following benefits:
-# - pretty printing
-# - somewhat judicious use of whitespace
-# - ensure id attributes are first
-def serializeXML(element, options, indent_depth=0, preserveWhitespace=False):
+def serializeXML(element: Element, options: optparse.Values, indent_depth: int = 0, preserveWhitespace: bool = False) -> str:
+    """Serialize a DOM tree to an SVG string with pretty-printing and attribute ordering."""
     outParts = []
 
     indent_type = ""
@@ -3898,8 +3948,7 @@ def serializeXML(element, options, indent_depth=0, preserveWhitespace=False):
                             text_content = text_content.lstrip()
                         elif child == element.lastChild:
                             text_content = text_content.rstrip()
-                        while "  " in text_content:
-                            text_content = text_content.replace("  ", " ")
+                        text_content = _RE_MULTI_SPACE.sub(" ", text_content)
                     else:
                         text_content = text_content.strip()
                 outParts.append(make_well_formed(text_content))
@@ -3921,10 +3970,12 @@ def serializeXML(element, options, indent_depth=0, preserveWhitespace=False):
     return "".join(outParts)
 
 
-# this is the main method
-# input is a string representation of the input XML
-# returns a string representation of the output XML
-def scourString(in_string, options=None, stats=None):
+def scourString(in_string: str, options: optparse.Values | None = None, stats: ScourStats | None = None) -> str:
+    """Optimize an SVG string and return the optimized result.
+
+    This is the main entry point for the optimizer. It parses *in_string* as XML,
+    runs the full optimization pipeline, and serializes the result back to a string.
+    """
     # sanitize options (take missing attributes from defaults, discard unknown attributes)
     options = sanitizeOptions(options)
 
@@ -3984,7 +4035,7 @@ def scourString(in_string, options=None, stats=None):
         # TODO: throw error or warning?
 
     # check for redundant and unused SVG namespace declarations
-    def xmlnsUnused(prefix, namespace):
+    def xmlnsUnused(prefix: str, namespace: str) -> bool:
         if doc.getElementsByTagNameNS(namespace, "*"):
             return False
         else:
@@ -4110,38 +4161,18 @@ def scourString(in_string, options=None, stats=None):
     if options.shorten_ids:
         stats.num_bytes_saved_in_ids += shortenIDs(doc, options.shorten_ids_prefix, options)
 
-    # scour lengths (including coordinates)
-    for type in [
-        "svg",
-        "image",
-        "rect",
-        "circle",
-        "ellipse",
-        "line",
-        "linearGradient",
-        "radialGradient",
-        "stop",
-        "filter",
-    ]:
-        for elem in doc.getElementsByTagName(type):
-            for attr in [
-                "x",
-                "y",
-                "width",
-                "height",
-                "cx",
-                "cy",
-                "r",
-                "rx",
-                "ry",
-                "x1",
-                "y1",
-                "x2",
-                "y2",
-                "fx",
-                "fy",
-                "offset",
-            ]:
+    # scour lengths (including coordinates) — single DOM traversal instead of 10
+    _LENGTH_SCOUR_TYPES = frozenset([
+        "svg", "image", "rect", "circle", "ellipse", "line",
+        "linearGradient", "radialGradient", "stop", "filter",
+    ])
+    _LENGTH_SCOUR_ATTRS = (
+        "x", "y", "width", "height", "cx", "cy", "r", "rx", "ry",
+        "x1", "y1", "x2", "y2", "fx", "fy", "offset",
+    )
+    for elem in doc.getElementsByTagName("*"):
+        if elem.tagName in _LENGTH_SCOUR_TYPES:
+            for attr in _LENGTH_SCOUR_ATTRS:
                 if elem.getAttribute(attr) != "":
                     elem.setAttribute(attr, scourLength(elem.getAttribute(attr)))
     viewBox = doc.documentElement.getAttribute("viewBox")
@@ -4193,10 +4224,8 @@ def scourString(in_string, options=None, stats=None):
     return total_output
 
 
-# used mostly by unit tests
-# input is a filename
-# returns the minidom doc representation of the SVG
-def scourXmlFile(filename, options=None, stats=None):
+def scourXmlFile(filename: str, options: optparse.Values | None = None, stats: ScourStats | None = None) -> Document:
+    """Optimize an SVG file and return the minidom Document (used primarily by tests)."""
     # sanitize options (take missing attributes from defaults, discard unknown attributes)
     options = sanitizeOptions(options)
     # we need to make sure infilename is set correctly (otherwise relative references in the SVG won't work)
@@ -4230,7 +4259,7 @@ class HeaderedFormatter(optparse.IndentedHelpFormatter):
     above usage information.
     """
 
-    def format_usage(self, usage):
+    def format_usage(self, usage: str) -> str:
         return "%s %s\n%s\n%s" % (APP, VER, COPYRIGHT, optparse.IndentedHelpFormatter.format_usage(self, usage))
 
 
@@ -4487,7 +4516,8 @@ _option_group_compatibility.add_option(
 _options_parser.add_option_group(_option_group_compatibility)
 
 
-def parse_args(args=None, ignore_additional_args=False):
+def parse_args(args: list[str] | None = None, ignore_additional_args: bool = False) -> optparse.Values:
+    """Parse command-line arguments and return an options namespace."""
     options, rargs = _options_parser.parse_args(args)
 
     if rargs:
@@ -4516,14 +4546,13 @@ def parse_args(args=None, ignore_additional_args=False):
     return options
 
 
-# this function was replaced by 'sanitizeOptions()' and is only kept for backwards compatibility
-# TODO: delete this at some point or continue to keep it around?
-def generateDefaultOptions():
+def generateDefaultOptions() -> optparse.Values:
+    """Return default options. Kept for backwards compatibility with Scour API."""
     return sanitizeOptions()
 
 
-# sanitizes options by updating attributes in a set of defaults options while discarding unknown attributes
-def sanitizeOptions(options=None):
+def sanitizeOptions(options: optparse.Values | None = None) -> optparse.Values:
+    """Return a complete options namespace with defaults filled in for missing attributes."""
     optionsDict = dict((key, getattr(options, key)) for key in dir(options) if not key.startswith("__"))
 
     sanitizedOptions = _options_parser.get_default_values()
@@ -4532,7 +4561,8 @@ def sanitizeOptions(options=None):
     return sanitizedOptions
 
 
-def maybe_gziped_file(filename, mode="r"):
+def maybe_gziped_file(filename: str, mode: str = "r") -> IO[Any]:
+    """Open *filename*, transparently decompressing ``.svgz``/``.gz`` files."""
     if os.path.splitext(filename)[1].lower() in (".svgz", ".gz"):
         import gzip
 
@@ -4540,7 +4570,8 @@ def maybe_gziped_file(filename, mode="r"):
     return open(filename, mode)
 
 
-def getInOut(options):
+def getInOut(options: optparse.Values) -> tuple[IO[Any], IO[Any]]:
+    """Resolve input/output file handles from *options* (files or stdin/stdout)."""
     if options.infilename:
         infile = maybe_gziped_file(options.infilename, "rb")
         # GZ: could catch a raised IOError here and report
@@ -4570,7 +4601,8 @@ def getInOut(options):
     return [infile, outfile]
 
 
-def generate_report(stats):
+def generate_report(stats: ScourStats) -> str:
+    """Format optimization statistics into a human-readable report string."""
     return (
         "  Number of elements removed: "
         + str(stats.num_elements_removed)
@@ -4616,7 +4648,8 @@ def generate_report(stats):
     )
 
 
-def start(options, input, output):
+def start(options: optparse.Values, input: IO[Any], output: IO[Any]) -> None:
+    """Run the optimizer: read from *input*, optimize, write to *output*."""
     # sanitize options (take missing attributes from defaults, discard unknown attributes)
     options = sanitizeOptions(options)
 
@@ -4654,7 +4687,8 @@ def start(options, input, output):
             print(generate_report(stats), file=options.ensure_value("stdout", sys.stdout))
 
 
-def run():
+def run() -> None:
+    """CLI entry point: parse args, open files, run optimizer, write output."""
     options = parse_args()
     (input, output) = getInOut(options)
     start(options, input, output)
