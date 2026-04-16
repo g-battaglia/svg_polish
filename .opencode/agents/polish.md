@@ -1,7 +1,7 @@
 ---
 description: "Agente ossessivo per pulizia, documentazione, ottimizzazione e test di svg_polish"
 mode: primary
-model: anthropic/claude-sonnet-4-5
+model: zai-coding-plan/glm-5.1
 temperature: 0.1
 color: "#2ECC71"
 tools:
