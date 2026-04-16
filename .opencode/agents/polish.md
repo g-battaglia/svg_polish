@@ -7,7 +7,7 @@ color: "#2ECC71"
 tools:
   "*": true
 permission:
-  bash: ask
+  bash: allow
   edit: allow
   write: allow
 ---
