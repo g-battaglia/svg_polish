@@ -39,7 +39,7 @@ Issues = "https://github.com/g-battaglia/svg_polish/issues"
 Changelog = "https://github.com/g-battaglia/svg_polish/blob/main/CHANGELOG.md"
 
 [project.scripts]
-svg-polish = "svg_polish.optimizer:run"
+svg-polish = "svg_polish.cli:run"
 
 [build-system]
 requires = ["hatchling"]
