@@ -6,11 +6,11 @@ by checking that the output is valid, smaller, and preserves key elements.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from svg_polish import optimize
-from svg_polish.optimizer import parse_args, scourString
+from svg_polish.cli import parse_args
+from svg_polish.optimizer import scour_string
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -19,7 +19,7 @@ def _scour(svg_path: Path, args: list[str] | None = None) -> str:
     """Load an SVG fixture and optimize it."""
     text = svg_path.read_text(encoding="utf-8")
     options = parse_args(args) if args else None
-    return scourString(text, options)
+    return scour_string(text, options)
 
 
 def _optimize(svg_path: Path) -> str:
@@ -219,12 +219,6 @@ class TestFixtureComplexScene:
         # 0.900000 should be reduced
         assert "0.900000" not in result
         # 2.000, 1.500, 1.000 should be reduced
-        assert "2.000" not in result
-        assert "1.500" not in result
-
-    def test_precision_reduced(self):
-        result = _optimize(FIXTURES / "complex-scene.svg")
-        # stroke-width values like 2.000, 1.500 should be reduced
         assert "2.000" not in result
         assert "1.500" not in result
 

@@ -1,19 +1,30 @@
 # Optimization Guide
 
-SVG Polish applies a comprehensive set of optimizations to reduce file size while preserving visual fidelity. All optimizations are **lossless by default**.
+`svg_polish` applies a comprehensive set of transformations to reduce
+file size while preserving visual fidelity. Every optimisation is
+**lossless by default** — the output renders identically to the input
+when `decimal_engine="decimal"` (the default).
 
-## Optimizations Applied by Default
+The flags below have CLI form (e.g. `--enable-viewboxing`) and an
+equivalent `OptimizeOptions` field (e.g.
+`OptimizeOptions(enable_viewboxing=True)`). See
+[`docs/configuration.md`](configuration.md) for the full mapping.
 
-### Editor Metadata Removal
+## Applied by default
 
-SVG editors embed their own namespaces and elements that are not needed for rendering.
+### Editor metadata removal
+
+SVG editors embed their own namespaces and elements that aren't needed
+for rendering.
 
 **Removed namespaces:**
+
 - Inkscape (`inkscape:`, `sodipodi:`)
 - Adobe Illustrator (`i:`, `x:`, `a:`)
 - Sketch (`sketch:`)
 
 **Before:**
+
 ```xml
 <svg xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
      inkscape:version="1.2"
@@ -24,13 +35,16 @@ SVG editors embed their own namespaces and elements that are not needed for rend
 ```
 
 **After:**
+
 ```xml
 <svg xmlns="http://www.w3.org/2000/svg">
   <rect width="100" height="100"/>
 </svg>
 ```
 
-### Color Optimization
+Disable with `keep_editor_data=True` / `--keep-editor-data`.
+
+### Color optimization
 
 Colors are converted to the shortest possible representation.
 
@@ -42,52 +56,58 @@ Colors are converted to the shortest possible representation.
 | `#aabbcc` | `#abc` |
 | `#000000` | `#000` |
 
-This applies to both XML attributes and inline styles.
+Applies to both XML attributes and inline styles. Disable with
+`simple_colors=False` / `--disable-simplify-colors`.
 
-### Default Attribute Removal
+### Default attribute removal
 
-Attributes that match their SVG default values are removed.
+Attributes that match SVG defaults are removed.
 
-| Element | Attribute | Default Value |
-|---------|-----------|---------------|
-| `rect` | `x`, `y` | `0` |
-| `rect` | `rx`, `ry` | `0` |
+| Element | Attribute | Default |
+|---------|-----------|---------|
+| `rect` | `x`, `y`, `rx`, `ry` | `0` |
 | `circle` | `cx`, `cy` | `0` |
 | `line` | `x1`, `y1`, `x2`, `y2` | `0` |
 | `stop` | `offset` | `0` |
 | All | `clip-path` | `none` |
-| All | `clip-rule` | `nonzero` |
-| All | `fill-rule` | `nonzero` |
-| All | `fill-opacity` | `1` |
-| All | `stroke-opacity` | `1` |
+| All | `clip-rule`, `fill-rule` | `nonzero` |
+| All | `fill-opacity`, `stroke-opacity` | `1` |
 | All | `stroke-miterlimit` | `4` |
 | All | `stroke-dashoffset` | `0` |
 
-### Path Data Optimization
+### Path data optimization
 
-SVG path data (`d` attribute) is heavily optimized:
+The `d` attribute is rewritten through an 8-phase pipeline (see
+[`docs/architecture.md`](architecture.md) for the full list):
 
-1. **Absolute to relative coordinates** - relative commands are typically shorter
-2. **Remove empty segments** - `l0,0` or `c0,0,0,0,0,0` are removed
-3. **Straight curves to lines** - cubic beziers that form straight lines become `l` commands
-4. **Line decomposition** - `l10,0` becomes `h10`, `l0,10` becomes `v10`
-5. **Collapse same commands** - consecutive `h10 h20` becomes `h10 20`
-6. **Same-direction collapse** - `h10 h20` (same sign) becomes `h30`
-7. **Collapse to shorthand** - cubic beziers become `s` when control points mirror
+1. Absolute → relative coordinates.
+2. Remove zero-length segments.
+3. Convert straight cubic curves to lines.
+4. Convert `l dx 0` to `h dx`, `l 0 dy` to `v dy`.
+5. Collapse runs of the same command type.
+6. Same-direction collapse (`h10 h20` → `h30`).
+7. Convert `c` → `s` when the first control point mirrors.
+8. Final consolidation pass.
 
 **Before:**
+
 ```xml
 <path d="M 10,10 L 20,10 L 20,20 L 10,20 Z"/>
 ```
 
 **After:**
+
 ```xml
 <path d="M10 10h10v10H10z"/>
 ```
 
-### Precision Reduction
+The output is only kept if it is strictly shorter than the input — a
+safety net against pathological cases.
 
-Numeric values are reduced to the configured precision (default: 5 significant digits).
+### Precision reduction
+
+Numeric values are reduced to the configured precision (default: 5
+significant digits).
 
 | Before | After |
 |--------|-------|
@@ -95,47 +115,64 @@ Numeric values are reduced to the configured precision (default: 5 significant d
 | `opacity="0.500000"` | `opacity=".5"` |
 | `font-size="12.000px"` | `font-size="12px"` |
 
-### Group Collapsing
+Tune with `digits` / `--set-precision` and `cdigits` /
+`--set-c-precision`. See [`docs/performance.md`](performance.md) for
+the precision-vs-size table.
 
-Redundant `<g>` elements are collapsed:
+### Group collapsing
+
+Redundant `<g>` wrappers are collapsed:
 
 **Before:**
+
 ```xml
 <g><g transform="translate(10,10)"><rect width="50" height="50"/></g></g>
 ```
 
 **After:**
+
 ```xml
 <g transform="translate(10,10)"><rect width="50" height="50"/></g>
 ```
 
-### Duplicate Gradient Removal
+Disable with `group_collapse=False` / `--disable-group-collapsing`.
 
-Gradients with identical stops are deduplicated. References are updated automatically.
+### Duplicate gradient removal
 
-### Style Conversion
+`<linearGradient>` and `<radialGradient>` definitions with identical
+stops are deduplicated. References (`url(#…)`) are rewritten
+automatically.
 
-Inline `style` attributes are converted to XML presentation attributes:
+### Style conversion
+
+Inline `style` attributes become XML presentation attributes:
 
 **Before:**
+
 ```xml
 <rect style="fill:red;stroke:blue"/>
 ```
 
 **After:**
+
 ```xml
 <rect fill="red" stroke="blue"/>
 ```
 
-### Unreferenced Element Removal
+Disable with `style_to_xml=False` / `--disable-style-to-xml`.
 
-Elements in `<defs>` that nothing references are removed (gradients, patterns, clip paths, etc.).
+### Unreferenced element removal
 
-### Opacity Zero Cleanup
+Elements in `<defs>` that nothing references are removed (gradients,
+patterns, clip paths, etc.). Disable with `keep_defs=True` /
+`--keep-unreferenced-defs`.
 
-Elements with `opacity:0` have their fill and stroke properties stripped, since they are invisible.
+### Opacity-zero cleanup
 
-### Transform Optimization
+Elements with `opacity:0` have their `fill` and `stroke` properties
+stripped, since they are invisible.
+
+### Transform optimization
 
 Transform attributes are simplified:
 
@@ -147,46 +184,59 @@ Transform attributes are simplified:
 | `rotate(0)` | removed |
 | `translate(10) translate(20)` | `translate(30)` |
 
-### Raster Embedding
+Applies to `transform`, `patternTransform`, and `gradientTransform`.
 
-External raster images (`<image href="photo.png"/>`) are embedded as base64 data URIs by default.
+### Raster embedding
 
----
+External raster images (`<image href="photo.png"/>`) are inlined as
+`data:` URIs by default. Disable with `embed_rasters=False` /
+`--disable-embed-rasters`. The `urllib` import is lazy — disabled
+embedding pays no cost.
 
-## Optional Optimizations
+## Opt-in optimizations
 
-These require explicit flags:
+These require explicit enabling via `OptimizeOptions` or CLI flags.
 
-### ViewBox Creation (`--enable-viewboxing`)
+### ViewBox creation (`enable_viewboxing` / `--enable-viewboxing`)
 
-Adds a `viewBox` attribute and removes `width`/`height`, making the SVG responsive.
+Adds a `viewBox` attribute and removes `width`/`height`, making the
+SVG responsive.
 
-### ID Stripping (`--enable-id-stripping`)
+### ID stripping (`strip_ids` / `--enable-id-stripping`)
 
 Removes all IDs that are not referenced by other elements.
 
-### ID Shortening (`--shorten-ids`)
+### ID shortening (`shorten_ids` / `--shorten-ids`)
 
-Replaces long IDs like `linearGradient1234` with minimal IDs like `a`, `b`, `c`.
+Replaces long IDs (`linearGradient1234`) with minimal IDs (`a`, `b`,
+`c`). Combine with `shorten_ids_prefix` to namespace the output.
 
-### Comment Stripping (`--enable-comment-stripping`)
+### Comment stripping (`strip_comments` / `--enable-comment-stripping`)
 
-Removes all XML comments (`<!-- ... -->`).
+Removes all XML comments.
 
-### Group Creation (`--create-groups`)
+### Group creation (`group_create` / `--create-groups`)
 
-Creates `<g>` elements to wrap runs of 3+ sibling elements that share common attributes, then promotes those attributes to the group.
+Creates `<g>` wrappers around runs of three or more sibling elements
+that share common attributes, then promotes those attributes to the
+new group.
 
----
+## Precision control
 
-## Precision Control
+| `digits` | Output character | Use case |
+|---|---|---|
+| `5` (default) | Indistinguishable at any zoom. | General use. |
+| `4` | Visible only at >2000 % zoom. | Web icons, dashboards. |
+| `3` | Visible at >500 % zoom; ~10–20 % smaller. | Map tiles, thumbnails. |
+| `2` | Lossy. | Aggressive size optimisation. |
 
-The `--set-precision` flag controls significant digits for coordinates:
+`cdigits` (control points) defaults to mirror `digits`. Set it lower
+to tighten control-point precision while keeping endpoint coordinates
+high-fidelity.
 
-| Precision | Example | Use Case |
-|-----------|---------|----------|
-| 3 | `12.3` | Icons, simple graphics |
-| 5 (default) | `12.345` | General purpose |
-| 8 | `12.345678` | High-detail illustrations |
+## Engine choice
 
-Control points can have a different precision with `--set-c-precision`.
+`OptimizeOptions(decimal_engine="float")` swaps the parsers from
+`Decimal` to native `float` for ~3–5× faster numeric arithmetic on
+dense paths. The trade-off — no longer bit-for-bit reproducible — is
+documented in [`docs/performance.md`](performance.md).

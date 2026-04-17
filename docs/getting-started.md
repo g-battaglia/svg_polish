@@ -4,23 +4,24 @@
 
 - Python 3.10 or later
 
-SVG Polish has **zero runtime dependencies**. It uses only the Python standard library.
+`svg_polish` depends on `defusedxml` for secure-by-default XML parsing.
+A `[fast]` extra is reserved for the v1.x `lxml`-backed XML engine
+(~3–5× faster on larger inputs); in v1.0 the only wired backend is
+`defusedxml.minidom`.
 
 ## Installation
-
-### From PyPI
 
 ```bash
 pip install svg-polish
 ```
 
-### With uv
+With `uv`:
 
 ```bash
 uv add svg-polish
 ```
 
-### From source
+From source:
 
 ```bash
 git clone https://github.com/g-battaglia/svg_polish.git
@@ -28,16 +29,13 @@ cd svg_polish
 uv sync
 ```
 
-## Your First Optimization
+## Your first optimisation
 
-### Command Line
+### Command line
 
 ```bash
-# Optimize a file
-svg-polish -i logo.svg -o logo-optimized.svg
-
-# Pipe from stdin to stdout
-cat logo.svg | svg-polish > logo-optimized.svg
+svg-polish -i logo.svg -o logo.min.svg
+cat logo.svg | svg-polish > logo.min.svg
 ```
 
 ### Python
@@ -45,15 +43,14 @@ cat logo.svg | svg-polish > logo-optimized.svg
 ```python
 from svg_polish import optimize
 
-svg_input = """
+svg = """
 <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
   <rect x="0" y="0" width="100" height="100"
         fill="#ff0000" stroke="#000000" stroke-width="1.000"/>
 </svg>
 """
 
-result = optimize(svg_input)
-print(result)
+print(optimize(svg))
 ```
 
 Output:
@@ -65,67 +62,93 @@ Output:
 </svg>
 ```
 
-Notice what changed:
-- `x="0" y="0"` removed (default values)
-- `#ff0000` became `red` (shorter color name)
-- `#000000` became `#000` (short hex)
-- `1.000` became `1` (precision reduced)
+What changed:
 
-### Optimize a File
+- `x="0" y="0"` — removed (default values).
+- `#ff0000` → `red` — shorter color name.
+- `#000000` → `#000` — short hex form.
+- `1.000` → `1` — precision reduced.
+
+### Optimise a file
 
 ```python
-from svg_polish import optimize_file
+from svg_polish import optimize_path
 
-result = optimize_file("logo.svg")
-with open("logo-optimized.svg", "w") as f:
-    f.write(result)
+result = optimize_path("logo.svg")
 ```
 
-## Maximum Optimization
+`optimize_path` accepts `str` or `pathlib.Path`. The legacy
+`optimize_file(filename)` is still exported for `str`-only callers but
+new code should prefer `optimize_path`.
 
-For the smallest possible output, combine all optimization flags:
+## Tuning with `OptimizeOptions`
+
+Every public function accepts an `OptimizeOptions` dataclass. All
+fields are optional; defaults are secure and lossless.
+
+```python
+from svg_polish import optimize, OptimizeOptions
+
+opts = OptimizeOptions(
+    digits=3,
+    shorten_ids=True,
+    enable_viewboxing=True,
+    strip_comments=True,
+)
+optimized = optimize(svg, opts)
+```
+
+Equivalent CLI:
 
 ```bash
 svg-polish -i input.svg -o output.svg \
-  --enable-viewboxing \
-  --enable-id-stripping \
-  --enable-comment-stripping \
+  --set-precision=3 \
   --shorten-ids \
-  --indent=none \
-  --no-line-breaks \
-  --strip-xml-prolog
+  --enable-viewboxing \
+  --enable-comment-stripping
 ```
 
-Or in Python:
+## Async usage
 
 ```python
-from svg_polish.optimizer import scourString, parse_args
+import asyncio
+from svg_polish import optimize_async
 
-options = parse_args([
-    "--enable-viewboxing",
-    "--enable-id-stripping",
-    "--enable-comment-stripping",
-    "--shorten-ids",
-    "--indent=none",
-    "--no-line-breaks",
-    "--strip-xml-prolog",
-])
+async def handler(svg: str) -> str:
+    return await optimize_async(svg)
 
-result = scourString(svg_input, options)
+asyncio.run(handler(svg))
 ```
 
-## SVGZ (Compressed SVG)
+`optimize_async` offloads the synchronous optimiser to a worker
+thread via `asyncio.to_thread`. The optimiser is reentrant and
+thread-safe (per-call thread-local `Decimal` precision contexts), so
+running it from an async web framework will not block the event loop.
 
-Create gzip-compressed SVG files:
+## Stats
+
+```python
+from svg_polish import optimize_with_stats
+
+result = optimize_with_stats(svg)
+print(f"saved {result.saved_bytes} B "
+      f"({result.saved_ratio:.1%}) "
+      f"in {result.duration_ms:.1f} ms")
+```
+
+## SVGZ output
 
 ```bash
 svg-polish -i input.svg -o output.svgz
 ```
 
-The `.svgz` extension is automatically detected and the output is gzipped.
+The `.svgz` extension triggers gzip-compressed output automatically.
 
-## Next Steps
+## Next steps
 
-- [Python API Reference](api.md) for the full API
-- [CLI Reference](cli.md) for all command-line options
-- [Optimization Guide](optimizations.md) for details on what gets optimized
+- [Python API Reference](api.md) — every public function in detail.
+- [Configuration Guide](configuration.md) — `OptimizeOptions` field-by-field.
+- [CLI Reference](cli.md) — every CLI flag.
+- [Performance](performance.md) — when to flip `decimal_engine` /
+  `digits`, and what the v1.x `lxml` backend will buy you.
+- [Security](security.md) — using `svg_polish` on untrusted input.

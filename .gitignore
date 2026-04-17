@@ -26,6 +26,16 @@ coverage.xml
 # Ruff
 .ruff_cache/
 
+# Hypothesis (property-based test database)
+.hypothesis/
+
+# pytest-benchmark output (saved baselines kept locally, not committed)
+.benchmarks/
+
+# Local agent / loop tooling
+.ralph/
+.opencode/
+
 # IDE
 .vscode/
 .idea/

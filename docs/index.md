@@ -1,21 +1,36 @@
 # SVG Polish Documentation
 
-SVG Polish is a fast, lossless SVG optimizer for Python. It removes unnecessary data from SVG files, producing clean, lightweight vector graphics that render identically to the originals.
+`svg_polish` is a fast, lossless, type-safe SVG optimizer for Python.
+It strips editor metadata, collapses redundant attributes, deduplicates
+gradients, optimises path data and transforms — while guaranteeing the
+output renders identically to the input. The library is fully typed
+(`py.typed`), thread-safe, and secure-by-default against XML attacks.
 
 ## Contents
 
-- [Getting Started](getting-started.md) - Installation, first steps, quick examples
-- [Python API Reference](api.md) - `optimize()`, `optimize_file()`, and advanced usage
-- [CLI Reference](cli.md) - Command-line interface and all options
-- [Optimization Guide](optimizations.md) - What SVG Polish optimizes and how
-- [Configuration Guide](configuration.md) - Fine-tuning optimization behavior
-- [Architecture](architecture.md) - Internal design, modules, and code organization
-- [Contributing](contributing.md) - How to contribute, development setup, testing
-- [Migration from Scour](migration.md) - Guide for users migrating from Scour
+- [Getting Started](getting-started.md) — installation, first steps,
+  quick examples.
+- [Python API Reference](api.md) — `optimize`, `optimize_path`,
+  `OptimizeOptions`, `OptimizeResult`, exceptions.
+- [Configuration Guide](configuration.md) — every `OptimizeOptions`
+  field with presets.
+- [CLI Reference](cli.md) — every command-line flag.
+- [Optimization Guide](optimizations.md) — what `svg_polish` rewrites
+  and how.
+- [Performance](performance.md) — when to flip `decimal_engine` and
+  `digits`; benchmark workflow; v1.x lxml backend roadmap.
+- [Security](security.md) — usage patterns for untrusted input.
+- [Architecture](architecture.md) — module layout, layered design,
+  pipeline.
+- [Contributing](contributing.md) — development setup, test suites,
+  PR checklist.
+- [Migration from Scour](migration.md) — how to port code from Scour
+  0.38.2 to the v1.0 typed API.
 
 ## Quick Links
 
 - [GitHub Repository](https://github.com/g-battaglia/svg_polish)
 - [PyPI Package](https://pypi.org/project/svg-polish/)
 - [Changelog](../CHANGELOG.md)
+- [Security Policy](../SECURITY.md)
 - [License](../LICENSE) (Apache 2.0)

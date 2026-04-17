@@ -1,201 +1,186 @@
 # Python API Reference
 
-## Public API
+The canonical entry point is `svg_polish.optimize`. Configuration goes through the typed `OptimizeOptions` dataclass; results come back as plain `str`/`bytes`, or as a structured `OptimizeResult` when you ask for stats.
 
-SVG Polish provides a simple, high-level API through the `svg_polish` package.
+```python
+from svg_polish import optimize, OptimizeOptions
 
-### `svg_polish.optimize(svg_string, options=None)`
+optimized = optimize('<svg xmlns="http://www.w3.org/2000/svg">…</svg>')
 
-Optimize an SVG string and return the optimized result.
+# Tighter precision and ID shortening:
+opts = OptimizeOptions(digits=3, shorten_ids=True)
+optimized = optimize(svg, opts)
+```
 
-**Parameters:**
+The optimization is **lossless by default** — the output renders identically to the input. The opt-in `decimal_engine="float"` mode trades the lossless guarantee for ~3-5× faster numeric arithmetic on dense paths.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `svg_string` | `str \| bytes` | The SVG content to optimize. Accepts both `str` and `bytes` (UTF-8). |
-| `options` | `object \| None` | Optional configuration. Use `parse_args()` from `svg_polish.optimizer` for advanced configuration. Defaults to `None` (use default settings). |
+---
 
-**Returns:** `str` - The optimized SVG.
+## Primary API
 
-**Example:**
+All functions accept either an `OptimizeOptions` instance or `None` (uses defaults). Every public name is exported from the package root: `from svg_polish import optimize, optimize_path, …`.
+
+### `optimize(svg, options=None) -> str`
+
+Alias of `optimize_string`. The short, idiomatic name.
 
 ```python
 from svg_polish import optimize
 
-# Basic usage
 result = optimize('<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100"/></svg>')
-
-# From bytes
-result = optimize(b'<svg xmlns="http://www.w3.org/2000/svg">...</svg>')
-
-# With options
-from svg_polish.optimizer import parse_args
-options = parse_args(["--enable-viewboxing", "--shorten-ids"])
-result = optimize(svg_string, options)
 ```
 
-### `svg_polish.optimize_file(filename, options=None)`
+### `optimize_string(svg, options=None) -> str`
 
-Optimize an SVG file and return the optimized result.
-
-**Parameters:**
+Optimize an SVG string and return a `str`. Accepts `str` (Unicode) or `bytes` (any encoding declared in the XML prolog).
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `filename` | `str` | Path to the SVG file to optimize. |
-| `options` | `object \| None` | Optional configuration. |
+| `svg` | `str \| bytes` | SVG content. Must be well-formed XML. |
+| `options` | `OptimizeOptions \| None` | Configuration; `None` uses secure defaults. |
 
-**Returns:** `str` - The optimized SVG.
+**Raises:**
 
-**Example:**
+- `SvgParseError` — input is not valid XML.
+- `SvgSecurityError` — input violates a security policy (oversize, XML entities while disabled, etc.).
+
+### `optimize_bytes(svg, options=None) -> bytes`
+
+Bytes-in, bytes-out wrapper around `optimize_string`. Output is UTF-8 encoded.
+
+### `optimize_path(path, options=None) -> str`
+
+Read an SVG from a filesystem path and return the optimized `str`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | `str \| os.PathLike` | Filesystem path; `pathlib.Path` accepted. |
+| `options` | `OptimizeOptions \| None` | Configuration. |
+
+### `optimize_file(filename, options=None) -> str`
+
+Legacy alias of `optimize_path` for `str` filenames only. Prefer `optimize_path` in new code.
+
+### `async optimize_async(svg, options=None) -> str`
+
+Offloads `optimize_string` to a worker thread via `asyncio.to_thread`. Safe to call from an async web framework — the thread-local `Decimal` contexts make the optimizer reentrant.
 
 ```python
-from svg_polish import optimize_file
+import asyncio
+from svg_polish import optimize_async
 
-result = optimize_file("input.svg")
-with open("output.svg", "w") as f:
-    f.write(result)
+async def handler(svg: str) -> str:
+    return await optimize_async(svg)
 ```
 
-### `svg_polish.__version__`
+### `optimize_with_stats(svg, options=None) -> OptimizeResult`
 
-The package version as a string (e.g., `"1.0.0"`).
+Same as `optimize_string` but returns an `OptimizeResult` bundling savings metrics, byte sizes, and wall-clock duration.
 
 ```python
-from svg_polish import __version__
-print(__version__)  # "1.0.0"
+from svg_polish import optimize_with_stats
+
+result = optimize_with_stats(svg)
+print(f"saved {result.saved_bytes} bytes ({result.saved_ratio:.1%}) in {result.duration_ms:.1f} ms")
 ```
 
 ---
 
-## Advanced API
+## Configuration
 
-For fine-grained control, use the optimizer module directly.
+### `OptimizeOptions`
 
-### `svg_polish.optimizer.scourString(in_string, options=None)`
+Frozen, slotted dataclass. Pass an instance to any `optimize*` function. Fields are documented inline (see `python -c "help(OptimizeOptions)"`); the most commonly tuned ones:
 
-The core optimization function. Takes an SVG string and returns the optimized version.
-
-**Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `in_string` | `str` | The SVG content to optimize. |
-| `options` | `object \| None` | Options from `parse_args()`. If `None`, default options are used. |
-
-**Returns:** `str` - The optimized SVG.
-
-This is the same function called by `optimize()`, but without the `bytes` handling.
-
-### `svg_polish.optimizer.scourXmlFile(filename, options=None)`
-
-Optimize an SVG file and return the result as a DOM `Document` object.
-
-**Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `filename` | `str` | Path to the SVG file. |
-| `options` | `object \| None` | Options from `parse_args()`. |
-
-**Returns:** `xml.dom.minidom.Document` - The optimized SVG DOM.
-
-### `svg_polish.optimizer.parse_args(args=None)`
-
-Parse command-line style arguments into an options object.
-
-**Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `args` | `list[str] \| None` | List of command-line arguments (without the program name). If `None`, parses `sys.argv`. |
-
-**Returns:** An `optparse.Values` object with all configuration options.
-
-**Example:**
+| Field | Type | Default | Effect |
+|-------|------|---------|--------|
+| `digits` | `int` | `5` | Significant-digit precision for normal coordinates. |
+| `cdigits` | `int` | `-1` | Precision for control points (`-1` → mirror `digits`). |
+| `decimal_engine` | `Literal["decimal","float"]` | `"decimal"` | `"float"` is faster (~3-5× on dense paths) but lossy. |
+| `xml_backend` | `Literal["minidom"]` | `"minidom"` | Only `defusedxml.minidom` ships in v1.0; pluggable `lxml` backend planned for v1.x. |
+| `allow_xml_entities` | `bool` | `False` | Enable only on **trusted** input; emits a `SecurityWarning`. |
+| `max_input_bytes` | `int \| None` | `100 * 1024 * 1024` | Reject inputs larger than this. `None` disables. |
+| `shorten_ids` | `bool` | `False` | Replace long IDs with short ones (`a`, `b`, …). |
+| `enable_viewboxing` | `bool` | `False` | Convert `width`/`height` to `viewBox`. |
+| `strip_comments` | `bool` | `False` | Drop XML comments. |
+| `keep_editor_data` | `bool` | `False` | Preserve Inkscape/Sketch/Illustrator metadata. |
 
 ```python
-from svg_polish.optimizer import parse_args
+from svg_polish import OptimizeOptions
 
-# Use specific options
-options = parse_args([
-    "--set-precision=3",
-    "--enable-viewboxing",
-    "--shorten-ids",
-    "--indent=none",
-])
-
-# List all available options
-options = parse_args(["--help"])  # Prints help and exits
+opts = OptimizeOptions(
+    digits=3,
+    shorten_ids=True,
+    enable_viewboxing=True,
+    strip_comments=True,
+)
 ```
 
-### `svg_polish.optimizer.start(options, infile, outfile)`
+The dataclass is frozen — derive variants with `dataclasses.replace`:
 
-Process an SVG file with the given options, writing the result to `outfile`.
+```python
+from dataclasses import replace
 
-**Parameters:**
+tight = OptimizeOptions(digits=5)
+extra_tight = replace(tight, digits=3, cdigits=2)
+```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `options` | `object` | Options from `parse_args()`. |
-| `infile` | `str` | Input file path. |
-| `outfile` | `str` | Output file path. Use `.svgz` extension for gzip output. |
+Invalid combinations raise `InvalidOptionError` at construction time.
 
----
+### `OptimizeResult`
 
-## Statistics
-
-After optimization, statistics are available through the `ScourStats` class.
-
-### `svg_polish.stats.ScourStats`
-
-Holds optimization statistics. Key attributes:
+Returned by `optimize_with_stats`. Frozen dataclass.
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
-| `num_elements_removed` | `int` | Number of elements removed |
-| `num_attributes_removed` | `int` | Number of attributes removed |
-| `num_comments_removed` | `int` | Number of comments removed |
-| `num_style_properties_fixed` | `int` | Number of style properties cleaned up |
-| `num_bytes_saved_in_colors` | `int` | Bytes saved from color optimization |
-| `num_bytes_saved_in_ids` | `int` | Bytes saved from ID shortening |
-| `num_bytes_saved_in_lengths` | `int` | Bytes saved from length precision |
-| `num_bytes_saved_in_path_data` | `int` | Bytes saved from path optimization |
-| `num_bytes_saved_in_transforms` | `int` | Bytes saved from transform optimization |
-| `num_path_segments_removed` | `int` | Number of path segments removed |
-| `num_points_removed_from_polygon` | `int` | Points removed from polygon/polyline |
+| `svg` | `str` | The optimized SVG. |
+| `stats` | `ScourStats` | Per-pass counters (elements removed, bytes saved per category). |
+| `input_bytes` | `int` | UTF-8 byte size of the input. |
+| `output_bytes` | `int` | UTF-8 byte size of the output. |
+| `duration_ms` | `float` | Wall-clock duration. |
+| `saved_bytes` | `int` *(property)* | `input_bytes - output_bytes`. |
+| `saved_ratio` | `float` *(property)* | `saved_bytes / input_bytes`, `0.0` for empty input. |
+
+### `ScourStats`
+
+Slotted dataclass with savings counters: `num_elements_removed`, `num_attributes_removed`, `num_comments_removed`, `num_style_properties_fixed`, `num_bytes_saved_in_*` (colors, ids, lengths, path_data, transforms), `num_path_segments_removed`, `num_points_removed_from_polygon`, `num_ids_kept`. Available on `OptimizeResult.stats` or by passing a manually-constructed instance through the lower-level pipeline.
 
 ---
 
-## CSS Parser
+## Exceptions
 
-### `svg_polish.css.parseCssString(css_text)`
+All public exceptions derive from `SvgPolishError`:
 
-Parse a CSS string into a list of rules. Used internally for processing `<style>` elements.
-
-**Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `css_text` | `str` | The CSS text to parse. |
-
-**Returns:** `list[CSSRule]` - A list of CSS rules, each with `selector` and `properties` keys.
+| Exception | When raised |
+|-----------|-------------|
+| `SvgPolishError` | Base class — catch this to handle any library error. |
+| `SvgParseError` | Input cannot be parsed as well-formed XML. Includes `line`, `column`, `snippet` when available. |
+| `SvgPathSyntaxError` | A `<path>` `d` attribute is malformed. |
+| `SvgTransformSyntaxError` | A `transform=`/`patternTransform=`/`gradientTransform=` value is malformed. |
+| `SvgOptimizeError` | Internal optimization failure (rare). |
+| `InvalidOptionError` | An `OptimizeOptions` field is out of range. Also derives from `ValueError`. |
+| `SvgSecurityError` | Input violates a security policy: oversize, custom entities while disabled, etc. |
 
 ```python
-from svg_polish.css import parseCssString
+from svg_polish import optimize, SvgParseError, SvgSecurityError
 
-rules = parseCssString(".cls1 { fill: red; stroke: blue }")
-# [{'selector': '.cls1', 'properties': {'fill': 'red', 'stroke': 'blue'}}]
+try:
+    optimize(untrusted_svg)
+except SvgSecurityError as exc:
+    log.warning("rejected suspicious SVG: %s", exc)
+except SvgParseError as exc:
+    log.info("malformed SVG at line %s col %s", exc.line, exc.column)
 ```
 
 ---
 
 ## Type Support
 
-SVG Polish ships with a `py.typed` marker (PEP 561), so type checkers like mypy will automatically pick up its type information.
+The package ships a `py.typed` marker (PEP 561). All public functions are fully typed; `mypy --strict` passes against user code that imports from `svg_polish`.
 
 ```python
-from svg_polish import optimize
+from svg_polish import optimize, OptimizeOptions
 
-result: str = optimize("<svg>...</svg>")  # Type-safe
+result: str = optimize("<svg>…</svg>")
+opts: OptimizeOptions = OptimizeOptions(digits=3)
 ```

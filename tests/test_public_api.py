@@ -114,10 +114,11 @@ class TestImports:
         assert __version__
 
     def test_import_optimizer_module(self):
-        from svg_polish.optimizer import parse_args, scourString, scourXmlFile
+        from svg_polish.cli import parse_args
+        from svg_polish.optimizer import scour_string, scour_xml_file
 
-        assert callable(scourString)
-        assert callable(scourXmlFile)
+        assert callable(scour_string)
+        assert callable(scour_xml_file)
         assert callable(parse_args)
 
     def test_import_stats(self):

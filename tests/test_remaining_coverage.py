@@ -8,24 +8,23 @@ from __future__ import annotations
 
 import xml.dom.minidom
 
+from svg_polish.cli import parse_args
 from svg_polish.optimizer import (
-    removeUnusedDefs,
-    findReferencedElements,
-    findElementsWithId,
-    renameID,
     dedup_gradient,
-    scourString,
-    parse_args,
-    styleInheritedFromParent,
-    styleInheritedByChild,
-    mayContainTextNodes,
-    NS,
+    find_elements_with_id,
+    find_referenced_elements,
+    may_contain_text_nodes,
+    remove_unused_defs,
+    rename_id,
+    scour_string,
+    style_inherited_by_child,
+    style_inherited_from_parent,
 )
 
 
 def _scour(svg_string: str, args: list[str] | None = None) -> str:
     options = parse_args(args) if args else None
-    return scourString(svg_string, options)
+    return scour_string(svg_string, options)
 
 
 def _parse_svg(svg_string: str):
@@ -33,12 +32,12 @@ def _parse_svg(svg_string: str):
 
 
 # ---------------------------------------------------------------------------
-# removeUnusedDefs called with referencedIDs=None (line 619)
+# remove_unused_defs called with referencedIDs=None (line 619)
 # ---------------------------------------------------------------------------
 
 
 class TestRemoveUnusedDefsDirectCall:
-    """Call removeUnusedDefs directly with referencedIDs=None to hit line 619."""
+    """Call remove_unused_defs directly with referencedIDs=None to hit line 619."""
 
     def test_direct_call_with_none_referenced_ids(self):
         svg = (
@@ -53,7 +52,7 @@ class TestRemoveUnusedDefsDirectCall:
         doc = _parse_svg(svg)
         defs = doc.getElementsByTagName("defs")[0]
         # Call directly with referencedIDs=None to trigger line 619
-        elemsToRemove = removeUnusedDefs(doc, defs, elemsToRemove=None, referencedIDs=None)
+        elemsToRemove = remove_unused_defs(doc, defs, elemsToRemove=None, referencedIDs=None)
         assert isinstance(elemsToRemove, list)
 
 
@@ -76,10 +75,10 @@ class TestRenameIDsStyleUrlDirect:
             "</svg>"
         )
         doc = _parse_svg(svg)
-        identifiedElements = findElementsWithId(doc.documentElement)
-        referencedIDs = findReferencedElements(doc.documentElement)
+        identifiedElements = find_elements_with_id(doc.documentElement)
+        referencedIDs = find_referenced_elements(doc.documentElement)
         referringNodes = referencedIDs.get("oldId")
-        renameID("oldId", "a", identifiedElements, referringNodes)
+        rename_id("oldId", "a", identifiedElements, referringNodes)
         result = doc.documentElement.toxml()
         assert "url(#a)" in result
         assert "oldId" not in result
@@ -91,14 +90,14 @@ class TestRenameIDsStyleUrlDirect:
             '<linearGradient id="oldId"><stop offset="0" stop-color="red"/>'
             '<stop offset="1" stop-color="blue"/></linearGradient>'
             "</defs>"
-            "<rect width=\"100\" height=\"100\" style=\"fill:url('#oldId')\"/>"
+            '<rect width="100" height="100" style="fill:url(\'#oldId\')"/>'
             "</svg>"
         )
         doc = _parse_svg(svg)
-        identifiedElements = findElementsWithId(doc.documentElement)
-        referencedIDs = findReferencedElements(doc.documentElement)
+        identifiedElements = find_elements_with_id(doc.documentElement)
+        referencedIDs = find_referenced_elements(doc.documentElement)
         referringNodes = referencedIDs.get("oldId")
-        renameID("oldId", "b", identifiedElements, referringNodes)
+        rename_id("oldId", "b", identifiedElements, referringNodes)
         result = doc.documentElement.toxml()
         assert "url(#b)" in result
 
@@ -109,14 +108,14 @@ class TestRenameIDsStyleUrlDirect:
             '<linearGradient id="oldId"><stop offset="0" stop-color="red"/>'
             '<stop offset="1" stop-color="blue"/></linearGradient>'
             "</defs>"
-            "<rect width=\"100\" height=\"100\" style='fill:url(\"#oldId\")'/>"
+            '<rect width="100" height="100" style=\'fill:url("#oldId")\'/>'
             "</svg>"
         )
         doc = _parse_svg(svg)
-        identifiedElements = findElementsWithId(doc.documentElement)
-        referencedIDs = findReferencedElements(doc.documentElement)
+        identifiedElements = find_elements_with_id(doc.documentElement)
+        referencedIDs = find_referenced_elements(doc.documentElement)
         referringNodes = referencedIDs.get("oldId")
-        renameID("oldId", "c", identifiedElements, referringNodes)
+        rename_id("oldId", "c", identifiedElements, referringNodes)
         result = doc.documentElement.toxml()
         assert "url(#c)" in result
 
@@ -169,7 +168,7 @@ class TestDedupGradientEdgeCases:
         )
         doc = _parse_svg(svg)
         grads = doc.getElementsByTagName("linearGradient")
-        master = grads[0]
+        _master = grads[0]
         dup = grads[1]
 
         # Remove dup's parent to simulate already-processed gradient
@@ -203,7 +202,7 @@ class TestDedupGradientEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# getInheritedAttribute and styleInheritedByChild (lines 1961-1963, 1997)
+# getInheritedAttribute and style_inherited_by_child (lines 1961-1963, 1997)
 # ---------------------------------------------------------------------------
 
 
@@ -211,16 +210,10 @@ class TestStyleInheritance:
     """Test style inheritance lookup functions."""
 
     def test_inherited_attribute_from_style(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<g style="fill:red">'
-            '<rect width="10" height="10"/>'
-            "</g>"
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><g style="fill:red"><rect width="10" height="10"/></g></svg>'
         doc = _parse_svg(svg)
         rect = doc.getElementsByTagName("rect")[0]
-        val = styleInheritedFromParent(rect, "fill")
+        val = style_inherited_from_parent(rect, "fill")
         assert val == "red"
 
     def test_inherited_attribute_skips_inherit_value(self):
@@ -233,7 +226,7 @@ class TestStyleInheritance:
         )
         doc = _parse_svg(svg)
         rect = doc.getElementsByTagName("rect")[0]
-        val = styleInheritedFromParent(rect, "fill")
+        val = style_inherited_from_parent(rect, "fill")
         assert val == "blue"
 
     def test_style_inherited_by_child_returns_false_when_child_overrides(self):
@@ -247,7 +240,7 @@ class TestStyleInheritance:
         doc = _parse_svg(svg)
         g = doc.getElementsByTagName("g")[0]
         # fill is overridden by child rect, so not inherited
-        result = styleInheritedByChild(g, "fill")
+        result = style_inherited_by_child(g, "fill")
         assert result is False
 
     def test_style_inherited_by_child_returns_false_when_child_has_style(self):
@@ -260,23 +253,23 @@ class TestStyleInheritance:
         )
         doc = _parse_svg(svg)
         g = doc.getElementsByTagName("g")[0]
-        result = styleInheritedByChild(g, "stroke")
+        result = style_inherited_by_child(g, "stroke")
         assert result is False
 
 
 # ---------------------------------------------------------------------------
-# mayContainTextNodes (lines 2058, 2067)
+# may_contain_text_nodes (lines 2058, 2067)
 # ---------------------------------------------------------------------------
 
 
 class TestMayContainTextNodesDirect:
-    """Direct calls to mayContainTextNodes."""
+    """Direct calls to may_contain_text_nodes."""
 
     def test_non_svg_namespace_element(self):
         svg = (
             '<svg xmlns="http://www.w3.org/2000/svg" '
             'xmlns:custom="http://example.com/ns">'
-            '<custom:widget>text</custom:widget>'
+            "<custom:widget>text</custom:widget>"
             "</svg>"
         )
         doc = _parse_svg(svg)
@@ -286,23 +279,17 @@ class TestMayContainTextNodesDirect:
                 custom_elem = child
                 break
         assert custom_elem is not None
-        assert mayContainTextNodes(custom_elem) is True
+        assert may_contain_text_nodes(custom_elem) is True
 
     def test_group_with_text_child(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            "<g>"
-            "<text>Hello</text>"
-            "</g>"
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><g><text>Hello</text></g></svg>'
         doc = _parse_svg(svg)
         g = doc.getElementsByTagName("g")[0]
-        assert mayContainTextNodes(g) is True
+        assert may_contain_text_nodes(g) is True
 
 
 # ---------------------------------------------------------------------------
-# removeDefaultAttributeValues universal (line 2402) + color in styles (2507-2508)
+# remove_default_attribute_values universal (line 2402) + color in styles (2507-2508)
 # ---------------------------------------------------------------------------
 
 
@@ -337,11 +324,7 @@ class TestPathStraightCurveFlush:
         # c with TWO sets of coords in ONE command:
         # 1st set: not collinear → kept as curve → newData = [5,10,15,20,20,25]
         # 2nd set: dx=0, p1x=0, p2x=0 → straight → triggers flush of newData
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M0,0 c5,10,15,20,20,25,0,0,0,0,0,10"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0,0 c5,10,15,20,20,25,0,0,0,0,0,10"/></svg>'
         result = _scour(svg)
         assert "path" in result
 
@@ -356,22 +339,14 @@ class TestPathLineDecomposeHV:
     def test_vertical_after_regular_line(self):
         # h10 prevents l from being merged into m. Then l 5,5,0,10:
         # first pair (5,5) fills lineTuples, second (0,10) triggers flush → lines 2828-2829
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M0,0 h10 l5,5,0,10"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0,0 h10 l5,5,0,10"/></svg>'
         result = _scour(svg)
         assert "v" in result or "l" in result
 
     def test_horizontal_after_regular_line(self):
         # v10 prevents l from being merged into m. Then l 5,5,10,0:
         # first pair (5,5) fills lineTuples, second (10,0) triggers flush → lines 2834-2839
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M0,0 v10 l5,5,10,0"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0,0 v10 l5,5,10,0"/></svg>'
         result = _scour(svg)
         assert "h" in result or "l" in result
 
@@ -391,28 +366,20 @@ class TestCollapseConsecutiveSameCommands:
     def test_consecutive_h_from_decomposition(self):
         # h10 separates m from l. l 5,5,10,0,20,0 decomposes to: l(5,5), h(10), h(20)
         # Then h(10) + h(20) collapse at line 2999
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M0,0 h1 l5,5,10,0,20,0"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0,0 h1 l5,5,10,0,20,0"/></svg>'
         result = _scour(svg)
         assert "path" in result
 
     def test_consecutive_v_from_decomposition(self):
         # v1 separates m from l. l 5,5,0,10,0,20 decomposes to: l(5,5), v(10), v(20)
         # Then v(10) + v(20) collapse at line 2999
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M0,0 v1 l5,5,0,10,0,20"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0,0 v1 l5,5,0,10,0,20"/></svg>'
         result = _scour(svg)
         assert "path" in result
 
 
 # ---------------------------------------------------------------------------
-# reducePrecision in styles (lines 3315-3321)
+# reduce_precision in styles (lines 3315-3321)
 # ---------------------------------------------------------------------------
 
 
@@ -420,7 +387,7 @@ class TestReducePrecisionInStyles:
     """Length values in style attributes that can be shortened (lines 3315-3321).
 
     Must use --disable-style-to-xml to prevent styles from being moved to attributes
-    before reducePrecision runs.
+    before reduce_precision runs.
     """
 
     def test_stroke_width_in_style_shortened(self):
@@ -434,11 +401,7 @@ class TestReducePrecisionInStyles:
         assert "2.500" not in result
 
     def test_font_size_in_style_shortened(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<text style="font-size:12.000px">Hello</text>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><text style="font-size:12.000px">Hello</text></svg>'
         result = _scour(svg, ["--disable-style-to-xml"])
         assert "12.000" not in result
 
@@ -483,11 +446,7 @@ class TestCreateViewBoxEdgeCases:
     """Edge cases for viewBox creation."""
 
     def test_renderer_workaround_blocks_cm_units(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg" width="10cm" height="5cm">'
-            '<rect width="100" height="100"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10cm" height="5cm"><rect width="100" height="100"/></svg>'
         result = _scour(svg, ["--enable-viewboxing", "--renderer-workaround"])
         # Should NOT create viewBox because of cm units with renderer workaround
         assert "viewBox" not in result
@@ -517,16 +476,14 @@ class TestCreateViewBoxEdgeCases:
 
     def test_viewbox_creation_with_px_units(self):
         svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="50px">'
-            '<rect width="100" height="50"/>'
-            "</svg>"
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="50px"><rect width="100" height="50"/></svg>'
         )
         result = _scour(svg, ["--enable-viewboxing"])
         assert "viewBox" in result
 
 
 # ---------------------------------------------------------------------------
-# remapNamespacePrefix with non-empty prefix (line 3698)
+# remap_namespace_prefix with non-empty prefix (line 3698)
 # ---------------------------------------------------------------------------
 
 

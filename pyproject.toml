@@ -9,6 +9,9 @@ authors = [
     { name = "Giacomo Battaglia", email = "giacomo@battaglia.dev" },
 ]
 keywords = ["svg", "optimizer", "vector", "graphics", "minifier", "cleaner"]
+dependencies = [
+    "defusedxml>=0.7.1",
+]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
@@ -36,7 +39,7 @@ Issues = "https://github.com/g-battaglia/svg_polish/issues"
 Changelog = "https://github.com/g-battaglia/svg_polish/blob/main/CHANGELOG.md"
 
 [project.scripts]
-svg-polish = "svg_polish.optimizer:run"
+svg-polish = "svg_polish.cli:run"
 
 [build-system]
 requires = ["hatchling"]
@@ -52,6 +55,8 @@ lint = "ruff check src/ tests/"
 format = "ruff format src/ tests/"
 format-check = "ruff format --check src/ tests/"
 typecheck = "mypy src/svg_polish/"
+bench = "pytest tests/benchmarks/ --benchmark-only --benchmark-save=baseline"
+bench-compare = "pytest tests/benchmarks/ --benchmark-only --benchmark-compare=baseline --benchmark-compare-fail=mean:5%"
 check.sequence = [
     { ref = "lint" },
     { ref = "format-check" },
@@ -62,6 +67,10 @@ check.sequence = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "benchmark: performance benchmarks (slow, opt-in via 'pytest --benchmark-only' or 'poe bench')",
+]
+addopts = "-m 'not benchmark'"
 
 [tool.coverage.run]
 source = ["svg_polish"]
@@ -97,7 +106,10 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=6.0",
+    "pytest-benchmark>=4.0",
     "ruff>=0.11",
     "mypy>=1.15",
     "poethepoet>=0.34",
+    "hypothesis>=6.152.1",
+    "types-defusedxml>=0.7",
 ]

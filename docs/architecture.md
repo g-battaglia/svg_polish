@@ -1,148 +1,168 @@
 # Architecture
 
-## Module Overview
+`svg_polish` is organised as a small core orchestrator that walks the
+DOM, plus a set of single-purpose modules that own one transformation
+pass each. Everything is deliberately layered so that a contributor can
+read one module without holding the rest of the codebase in their head.
+
+## Module layout
 
 ```
 src/svg_polish/
-├── __init__.py          # Public API: optimize(), optimize_file()
-├── optimizer.py         # Core optimization engine (~4600 lines)
-├── stats.py             # ScourStats: optimization statistics
-├── css.py               # Minimal CSS parser for <style> elements
-├── svg_regex.py         # SVG path data parser (d attribute)
-├── svg_transform.py     # SVG transform attribute parser
-└── py.typed             # PEP 561 type marker
+├── __init__.py        # Public API: optimize*, OptimizeOptions, OptimizeResult, exceptions
+├── options.py         # OptimizeOptions dataclass + validation
+├── exceptions.py      # SvgPolishError hierarchy
+├── stats.py           # ScourStats dataclass
+├── constants.py       # SVG namespaces, lexicons, default attribute tables
+├── types.py           # Shared aliases + thread-local Decimal precision context
+│
+├── cli.py             # CLI: argparse/optparse, file I/O, console entry point
+│
+├── optimizer.py       # Pipeline orchestrator (scour_string, scour_xml_file)
+├── serialize.py       # Custom XML serializer (tighter than minidom's toxml())
+├── dom.py             # DOM helpers: ID maps, url(#…) reference walker
+├── style.py           # CSS-on-attributes repair, style inheritance helpers
+├── colors.py          # CSS color parsing + shortest-form conversion
+├── ids.py             # ID shortening, dead-ID removal
+├── namespaces.py      # Namespace pruning + prefix remap
+├── groups.py          # <g> collapse / sibling merge / common-attr promotion
+├── gradients.py       # Linear/radial gradient deduplication
+│
+├── passes/            # One module per optimisation pass
+│   ├── __init__.py
+│   ├── path.py        # clean_path: 8-phase path data optimisation
+│   ├── transform.py   # optimise transform/patternTransform/gradientTransform
+│   ├── length.py      # scour_unitless_length + reduce_precision walker
+│   ├── attributes.py  # remove_unused_attributes_on_parent
+│   ├── defaults.py    # remove_default_attribute_values
+│   ├── comments.py    # strip_comments
+│   ├── rasters.py     # embed_rasters (lazy urllib import)
+│   └── sizing.py      # properly_size_doc, viewBox conversion
+│
+├── svg_regex.py       # Path data lexer + recursive-descent parser
+├── svg_transform.py   # Transform attribute lexer + parser
+├── css.py             # Minimal CSS parser for <style> elements
+└── py.typed           # PEP 561 marker
 ```
 
-## Module Details
+## Layering
 
-### `__init__.py` - Public API
+Modules import only from layers below them; circular imports are
+forbidden by mypy and CI. From bottom to top:
 
-Exposes three symbols:
-- `optimize(svg_string, options=None) -> str` - Main entry point
-- `optimize_file(filename, options=None) -> str` - File convenience wrapper
-- `__version__` - Package version string
+1. **Foundation** — `constants`, `types`, `exceptions`, `options`,
+   `stats`. Pure data, no DOM. Always importable.
+2. **Parsers** — `svg_regex`, `svg_transform`, `css`. Pure functions
+   over text, return typed structures. Read `_precision.engine` to
+   choose between `Decimal` and `float`.
+3. **DOM helpers** — `dom`, `style`, `colors`, `namespaces`,
+   `serialize`. Operate on `xml.dom.minidom` nodes. No optimisation
+   logic.
+4. **Structural passes** — `ids`, `groups`, `gradients`. Move/merge
+   nodes; consume DOM helpers.
+5. **Numeric / textual passes** — `passes/*`. Operate on attribute
+   values, may call parsers and length scouring.
+6. **Orchestrator** — `optimizer.scour_string`. Wires everything
+   inside a `precision_scope(...)` so the per-call precision is
+   thread-local.
+7. **Surface** — `__init__.py` exposes `optimize_*`,
+   `OptimizeOptions`, `OptimizeResult`, the exception hierarchy.
+   `cli.py` adds the console entry point.
 
-### `optimizer.py` - Core Engine
+## Optimisation pipeline
 
-The heart of SVG Polish. Contains the full optimization pipeline.
+`scour_string` runs the passes in this order:
 
-**Key functions:**
+1. Parse XML (`defusedxml.minidom.parseString`, secure by default).
+2. Strip editor-specific data unless `keep_editor_data=True`.
+3. Repair styles (canonicalise attributes vs. `style="…"`).
+4. Convert colors to shortest form (`#ff0000` → `red`).
+5. Remove unreferenced `<defs>` content.
+6. Remove empty containers (`<defs>`, `<g>`, `<metadata>`).
+7. Promote common attributes to the parent group.
+8. Collapse `<g>` elements where safe.
+9. Merge sibling groups with identical attributes.
+10. Optionally create new groups for runs of identical attributes.
+11. Re-promote common attributes to the new groups.
+12. Optimise path data (`passes/path.py`).
+13. Reduce numeric precision on length attributes (`passes/length.py`).
+14. Strip default attribute values (`passes/defaults.py`).
+15. Optimise transform attributes (`passes/transform.py`).
+16. Shorten IDs if requested (`ids.shorten_ids`).
+17. Convert to viewBox if requested (`passes/sizing.py`).
+18. Serialise to text (`serialize.py`).
 
-| Function | Purpose |
-|----------|---------|
-| `scourString(in_string, options)` | Main optimization entry point |
-| `scourXmlFile(filename, options)` | File-based optimization |
-| `parse_args(args)` | CLI argument parsing |
-| `start(options, infile, outfile)` | CLI entry point |
-| `run()` | Script entry point |
+### Path data sub-pipeline (`clean_path`)
 
-**Optimization pipeline** (order of execution in `scourString`):
+Inside `passes/path.py`, the 8-phase pipeline:
 
-1. Parse SVG into DOM (`xml.dom.minidom`)
-2. Remove editor data (Inkscape, Sodipodi, Adobe, Sketch)
-3. Repair/optimize styles
-4. Convert colors to short format
-5. Remove unreferenced elements
-6. Remove empty containers (`defs`, `g`, `metadata`)
-7. Move common attributes to parent groups
-8. Collapse groups
-9. Merge sibling groups with common attributes
-10. Create groups for common attributes (optional)
-11. Move common attributes to parent groups (second pass)
-12. Optimize path data
-13. Reduce coordinate precision
-14. Remove default attribute values
-15. Optimize transforms
-16. Shorten IDs (optional)
-17. Create viewBox (optional)
-18. Serialize to string
+1. Convert all commands to relative coordinates.
+2. Remove zero-length segments.
+3. Remove no-op commands.
+4. Convert straight cubic curves to lines.
+5. First collapse: merge runs of the same command type.
+6. Convert `l dx 0` to `h dx`, `l 0 dy` to `v dy`.
+7. Convert `c` to `s` where the first control point is the
+   reflection of the previous segment's last control point.
+8. Collapse consecutive same-direction segments.
 
-**Path optimization sub-pipeline** (within step 12):
+The output is only kept if it is strictly shorter than the input — a
+safety net against pathological inputs.
 
-1. Convert all commands to relative
-2. Remove empty segments (zero-length moves, lines)
-3. Remove no-op commands
-4. Convert straight cubic curves to lines
-5. First collapse: merge consecutive same-type commands
-6. Convert `l` to `h`/`v` shorthand
-7. Convert `c` to `s` shorthand
-8. Collapse same-direction segments
-9. Second collapse: merge consecutive same-type commands
+## Concurrency
 
-### `stats.py` - Optimization Statistics
+`scour_string` is reentrant *and* thread-safe. The numeric precision
+state (`_precision.ctx`, `_precision.ctx_c`, `_precision.engine`)
+lives on a `threading.local`, and `precision_scope(...)` saves/restores
+the previous values around each call. A `ThreadPoolExecutor` running
+many calls with different `digits` settings produces deterministic,
+byte-exact output per call.
 
-`ScourStats` class with `__slots__` for efficient storage. Tracks counts and byte savings for each optimization category.
+`optimize_async` exists exactly for this use case: it offloads a
+synchronous `optimize_string` invocation to a worker via
+`asyncio.to_thread`, so async web frameworks can call into the
+optimiser without blocking the event loop.
 
-### `css.py` - CSS Parser
+## Numeric engines
 
-Minimal CSS parser (`parseCssString`) that splits CSS into rules with selectors and property dictionaries. Used for processing `<style>` elements in SVGs.
+By default the path / transform parsers return `Decimal`, and
+arithmetic in the passes uses `Decimal` end-to-end. This is the
+**lossless** engine — the output renders identically to the input.
 
-### `svg_regex.py` - Path Data Parser
+`OptimizeOptions(decimal_engine="float")` switches the parsers to
+return native `float` for ~3-5× faster arithmetic on dense paths. The
+trade-off is documented in `docs/performance.md`: the output may differ
+in the last digit and is no longer byte-exact across machines.
 
-Regular expression-based parser for SVG path `d` attribute values. Handles all SVG path commands:
+## Security posture
 
-| Command | Parameters | Description |
-|---------|------------|-------------|
-| M/m | x,y | Move to |
-| L/l | x,y | Line to |
-| H/h | x | Horizontal line |
-| V/v | y | Vertical line |
-| C/c | x1,y1,x2,y2,x,y | Cubic bezier |
-| S/s | x2,y2,x,y | Smooth cubic bezier |
-| Q/q | x1,y1,x,y | Quadratic bezier |
-| T/t | x,y | Smooth quadratic bezier |
-| A/a | rx,ry,rot,large,sweep,x,y | Arc |
-| Z/z | | Close path |
+Inputs are parsed with `defusedxml`, so XXE, billion-laughs, external
+DTD fetches, and similar entity-expansion attacks are rejected by
+default. `OptimizeOptions.allow_xml_entities=True` falls back to the
+permissive parser and emits a `SecurityWarning` — only enable on
+trusted input. Inputs larger than `OptimizeOptions.max_input_bytes`
+(100 MB by default) are rejected with `SvgSecurityError`. See
+`docs/security.md` for the full threat model.
 
-### `svg_transform.py` - Transform Parser
+## Why custom serialisation?
 
-Parses SVG `transform` attribute values into structured data:
+`minidom.Document.toxml()` produces verbose output with unnecessary
+whitespace, sometimes losing namespace declarations, and is
+indifferent to attribute ordering. `serialize.py` produces tighter
+output, sorts attributes deterministically, and applies SVG-specific
+shortcut rules (e.g. self-closing tags for empty elements).
 
-| Transform | Parameters |
-|-----------|------------|
-| `translate(tx, ty)` | Translation |
-| `scale(sx, sy)` | Scale |
-| `rotate(angle, cx, cy)` | Rotation |
-| `skewX(angle)` | Horizontal skew |
-| `skewY(angle)` | Vertical skew |
-| `matrix(a,b,c,d,e,f)` | General affine |
+## Why `# pragma: no cover` on a few lines?
 
-## Data Flow
+A handful of branches are unreachable under the current control flow
+but are kept as defensive code:
 
-```
-Input SVG (string or file)
-        |
-        v
-  xml.dom.minidom.parseString()
-        |
-        v
-  DOM Document
-        |
-        v
-  Optimization passes (in-place DOM mutations)
-        |
-        v
-  Custom serializer (serializeXML)
-        |
-        v
-Output SVG string
-```
+- `default_attributes_universal` loop — the list is always empty.
+- `remap_namespace_prefix` with a non-empty prefix — always `""`.
+- ViewBox `ValueError` catch — values are scoured upstream.
+- `xmlns:` prefix in serialisation — minidom always includes `xmlns`
+  in `nodeName`.
+- `str.split()` returning an empty list — impossible per Python spec.
 
-The optimizer works directly on the minidom DOM tree, performing in-place mutations. The custom serializer at the end produces cleaner output than minidom's built-in `toxml()`.
-
-## Design Decisions
-
-**Why minidom?** The optimizer was originally written for Python 2.x when minidom was the standard choice. It works well for SVG files which are typically not very large.
-
-**Why in-place mutation?** The optimization passes are applied sequentially, each modifying the DOM. This avoids the overhead of creating new trees at each step.
-
-**Why a custom serializer?** minidom's `toxml()` produces verbose output with unnecessary whitespace. The custom serializer produces tighter output and handles SVG-specific formatting.
-
-**Why `# pragma: no cover` on some lines?** A few code paths are unreachable in the current code flow:
-- `default_attributes_universal` loop body: the list is always empty
-- `remapNamespacePrefix` with non-empty prefix: always called with `""`
-- ViewBox `ValueError` catch: values are scoured before this point
-- `xmlns:` prefix in serialization: minidom always includes `xmlns` in `nodeName`
-- `str.split()` returning empty list: impossible per Python specification
-
-These are defensive code from the original Scour project and are preserved for safety.
+These are documented in-line and excluded from coverage so they don't
+mask genuine gaps.

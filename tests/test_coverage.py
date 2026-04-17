@@ -9,47 +9,48 @@ from __future__ import annotations
 
 import gzip
 import os
-import sys
 import tempfile
 
 import pytest
 
+from svg_polish.cli import maybe_gziped_file, parse_args
 from svg_polish.optimizer import (
     Unit,
-    generateDefaultOptions,
+    find_referenced_elements,
+    generate_default_options,
     make_well_formed,
-    maybe_gziped_file,
-    parse_args,
-    sanitizeOptions,
-    scourString,
-    scourXmlFile,
+    remove_duplicate_gradients,
+    sanitize_options,
+    scour_string,
+    scour_xml_file,
 )
 from svg_polish.stats import ScourStats
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _scour(svg: str, extra_args: list[str] | None = None) -> str:
-    """Run scourString with parse_args defaults plus any extra CLI flags."""
+    """Run scour_string with parse_args defaults plus any extra CLI flags."""
     args = extra_args or []
     options = parse_args(args)
-    return scourString(svg, options)
+    return scour_string(svg, options)
 
 
 def _scour_with_stats(svg: str, extra_args: list[str] | None = None) -> tuple[str, ScourStats]:
-    """Run scourString and also return the ScourStats object."""
+    """Run scour_string and also return the ScourStats object."""
     args = extra_args or []
     options = parse_args(args)
     stats = ScourStats()
-    result = scourString(svg, options, stats)
+    result = scour_string(svg, options, stats)
     return result, stats
 
 
 # ---------------------------------------------------------------------------
 # Unit handling (lines 445, 448-449, 455-456)
 # ---------------------------------------------------------------------------
+
 
 class TestUnitHandling:
     """Exercise the Unit.get() and Unit.str() edge cases."""
@@ -74,8 +75,9 @@ class TestUnitHandling:
 
 
 # ---------------------------------------------------------------------------
-# removeUnusedDefs first call (line 619)
+# remove_unused_defs first call (line 619)
 # ---------------------------------------------------------------------------
+
 
 class TestRemoveUnusedDefs:
     """SVG with <defs> containing unreferenced elements."""
@@ -117,6 +119,7 @@ class TestRemoveUnusedDefs:
 # renameIDs style url replacement (lines 858-862)
 # ---------------------------------------------------------------------------
 
+
 class TestRenameIDsStyleUrl:
     """Test SVG with style attributes containing url(#id) references."""
 
@@ -147,7 +150,7 @@ class TestRenameIDsStyleUrl:
             '<stop offset="1" stop-color="blue"/>'
             "</linearGradient>"
             "</defs>"
-            "<rect width=\"100\" height=\"100\" style=\"fill:url('#myVeryLongGradId')\"/>"
+            '<rect width="100" height="100" style="fill:url(\'#myVeryLongGradId\')"/>'
             "</svg>"
         )
         result = _scour(svg, ["--enable-id-stripping", "--shorten-ids"])
@@ -156,8 +159,9 @@ class TestRenameIDsStyleUrl:
 
 
 # ---------------------------------------------------------------------------
-# moveCommonAttributesToParentGroup with animation elements (line 1118)
+# move_common_attributes_to_parent_group with animation elements (line 1118)
 # ---------------------------------------------------------------------------
+
 
 class TestMoveCommonAttrsWithAnimation:
     """SVG with <animate> elements that should be skipped during common attr merging."""
@@ -182,6 +186,7 @@ class TestMoveCommonAttrsWithAnimation:
 # Group sibling merge trailing whitespace (line 1349)
 # ---------------------------------------------------------------------------
 
+
 class TestGroupSiblingMerge:
     """Test with <g> siblings that can be merged, including whitespace."""
 
@@ -203,6 +208,7 @@ class TestGroupSiblingMerge:
 # ---------------------------------------------------------------------------
 # Gradient offset with invalid units (line 1485)
 # ---------------------------------------------------------------------------
+
 
 class TestGradientOffsetInvalidUnits:
     """Gradient stop with offset that has unusual units defaults to 0."""
@@ -227,6 +233,7 @@ class TestGradientOffsetInvalidUnits:
 # ---------------------------------------------------------------------------
 # Gradient collapse with radial/linear attribute adoption (lines 1552, 1557-1559)
 # ---------------------------------------------------------------------------
+
 
 class TestGradientCollapse:
     """Test gradient collapse with attribute inheritance."""
@@ -270,6 +277,7 @@ class TestGradientCollapse:
 # Dedup gradient with parentNode removed (line 1671) and master_references KeyError (1707-1708)
 # ---------------------------------------------------------------------------
 
+
 class TestDedupGradients:
     """Two identical gradients where dedup runs."""
 
@@ -293,6 +301,27 @@ class TestDedupGradients:
         result = _scour(svg)
         # One of the duplicates should have been removed; both rects reference the same gradient
         assert "stop" in result
+
+    def test_dedup_with_explicit_referenced_ids(self):
+        """remove_duplicate_gradients accepts a pre-built referencedIDs map."""
+        import xml.dom.minidom
+
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg">'
+            "<defs>"
+            '<linearGradient id="dupA"><stop offset="0" stop-color="red"/></linearGradient>'
+            '<linearGradient id="dupB"><stop offset="0" stop-color="red"/></linearGradient>'
+            "</defs>"
+            '<rect fill="url(#dupA)"/><rect fill="url(#dupB)"/>'
+            "</svg>"
+        )
+        doc = xml.dom.minidom.parseString(svg)
+        root = doc.documentElement
+        assert root is not None
+        refs = find_referenced_elements(root)
+        # Pass the pre-built map to exercise the else branch that reuses it.
+        removed = remove_duplicate_gradients(doc, referencedIDs=refs)
+        assert removed >= 1
 
     def test_three_duplicate_gradients(self):
         svg = (
@@ -324,6 +353,7 @@ class TestDedupGradients:
 # opacity:0 style cleanup (lines 1788-1806)
 # ---------------------------------------------------------------------------
 
+
 class TestOpacityZeroCleanup:
     """Element with opacity:0 should have useless fill/stroke styles removed."""
 
@@ -344,9 +374,7 @@ class TestOpacityZeroCleanup:
 
     def test_opacity_zero_keeps_opacity(self):
         svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<rect width="100" height="100" style="opacity:0;fill:red"/>'
-            "</svg>"
+            '<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" style="opacity:0;fill:red"/></svg>'
         )
         result = _scour(svg)
         assert "opacity" in result
@@ -355,6 +383,7 @@ class TestOpacityZeroCleanup:
 # ---------------------------------------------------------------------------
 # fill-opacity:0 cleanup (lines 1840-1843)
 # ---------------------------------------------------------------------------
+
 
 class TestFillOpacityZeroCleanup:
     """Element with fill-opacity:0 should have fill and fill-rule removed."""
@@ -376,6 +405,7 @@ class TestFillOpacityZeroCleanup:
 # inkscape style removal (lines 1907-1908)
 # ---------------------------------------------------------------------------
 
+
 class TestInkscapeStyleRemoval:
     """Element with -inkscape-font-specification style should have it removed."""
 
@@ -396,31 +426,25 @@ class TestInkscapeStyleRemoval:
 # overflow removal from non-applicable elements (lines 1914-1915)
 # ---------------------------------------------------------------------------
 
+
 class TestOverflowRemoval:
     """overflow on non-applicable elements should be removed."""
 
     def test_overflow_on_rect_is_removed(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<rect width="100" height="100" style="overflow:hidden"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" style="overflow:hidden"/></svg>'
         result = _scour(svg)
         assert "overflow" not in result
 
     def test_overflow_on_circle_is_removed(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<circle cx="50" cy="50" r="50" style="overflow:visible"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="50" style="overflow:visible"/></svg>'
         result = _scour(svg)
         assert "overflow" not in result
 
 
 # ---------------------------------------------------------------------------
-# styleInheritedByChild (lines 1961-1963, 1997)
+# style_inherited_by_child (lines 1961-1963, 1997)
 # ---------------------------------------------------------------------------
+
 
 class TestStyleInheritedByChild:
     """Parent with style, child that inherits it."""
@@ -428,13 +452,7 @@ class TestStyleInheritedByChild:
     def test_inherited_style_not_removed(self):
         # The parent <g> has opacity:0 and a child <text> that could inherit fill.
         # Because the child *can* inherit fill, fill should not be stripped from the parent.
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<g style="opacity:0;fill:red">'
-            "<text>Hello</text>"
-            "</g>"
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><g style="opacity:0;fill:red"><text>Hello</text></g></svg>'
         result = _scour(svg)
         # fill should be preserved because text child inherits it
         assert "text" in result
@@ -453,8 +471,9 @@ class TestStyleInheritedByChild:
 
 
 # ---------------------------------------------------------------------------
-# mayContainTextNodes with non-SVG namespace (line 2058) and <g> (line 2067)
+# may_contain_text_nodes with non-SVG namespace (line 2058) and <g> (line 2067)
 # ---------------------------------------------------------------------------
+
 
 class TestMayContainTextNodes:
     """SVG with foreign namespace elements and groups with text."""
@@ -470,21 +489,16 @@ class TestMayContainTextNodes:
         assert "widget" in result
 
     def test_group_containing_text(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<g font-size="14px">'
-            "<text>Some text</text>"
-            "</g>"
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><g font-size="14px"><text>Some text</text></g></svg>'
         result = _scour(svg)
         assert "text" in result
         assert "Some text" in result
 
 
 # ---------------------------------------------------------------------------
-# removeDefaultAttributeValue for per-element attrs (lines 2402, 2507-2508)
+# remove_default_attribute_value for per-element attrs (lines 2402, 2507-2508)
 # ---------------------------------------------------------------------------
+
 
 class TestRemoveDefaultAttributeValues:
     """SVG elements with default attribute values that should be removed."""
@@ -538,15 +552,12 @@ class TestRemoveDefaultAttributeValues:
 # Path abs-to-rel for arc commands (lines 2564-2569)
 # ---------------------------------------------------------------------------
 
+
 class TestPathAbsToRelArc:
     """SVG path with absolute A arc commands."""
 
     def test_absolute_arc_converted_to_relative(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 10 80 A 25 25 0 0 1 50 80"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 10 80 A 25 25 0 0 1 50 80"/></svg>'
         result = _scour(svg)
         # The absolute A should be converted to relative a
         assert "<path" in result
@@ -557,33 +568,22 @@ class TestPathAbsToRelArc:
 # Remove zero-length curve segments (lines 2684-2685, 2691-2692, 2698-2699)
 # ---------------------------------------------------------------------------
 
+
 class TestRemoveZeroLengthSegments:
     """Path with zero-length curve segments of various types."""
 
     def test_zero_cubic_segment_removed(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 10 10 c 0 0 0 0 0 0 L 50 50"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 10 10 c 0 0 0 0 0 0 L 50 50"/></svg>'
         result, stats = _scour_with_stats(svg)
         assert stats.num_path_segments_removed > 0
 
     def test_zero_arc_segment_removed(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 10 10 a 25 25 0 0 1 0 0 L 50 50"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 10 10 a 25 25 0 0 1 0 0 L 50 50"/></svg>'
         result, stats = _scour_with_stats(svg)
         assert stats.num_path_segments_removed > 0
 
     def test_zero_quad_segment_removed(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 10 10 q 0 0 0 0 L 50 50"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 10 10 q 0 0 0 0 L 50 50"/></svg>'
         result, stats = _scour_with_stats(svg)
         assert stats.num_path_segments_removed > 0
 
@@ -592,45 +592,30 @@ class TestRemoveZeroLengthSegments:
 # Straight curve detection (lines 2778-2779, 2828-2829, 2834-2839)
 # ---------------------------------------------------------------------------
 
+
 class TestStraightCurveDetection:
     """Path with straight cubic curves and lines with h/v optimization."""
 
     def test_straight_cubic_converted_to_line(self):
         # A cubic bezier where both control points are on the same line as
         # start and end: c 10 20 20 40 30 60 => should become l 30 60
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 0 0 c 10 20 20 40 30 60"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 0 0 c 10 20 20 40 30 60"/></svg>'
         result, stats = _scour_with_stats(svg)
         assert "<path" in result
 
     def test_vertical_line_optimized_to_v(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 0 0 l 0 50"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 0 0 l 0 50"/></svg>'
         result, stats = _scour_with_stats(svg)
         assert stats.num_path_segments_removed > 0
 
     def test_horizontal_line_optimized_to_h(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 0 0 l 50 0"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 0 0 l 50 0"/></svg>'
         result, stats = _scour_with_stats(svg)
         assert stats.num_path_segments_removed > 0
 
     def test_straight_cubic_vertical(self):
         # Vertical straight cubic: dx=0, control points also have x=0
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 10 10 c 0 10 0 20 0 30"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 10 10 c 0 10 0 20 0 30"/></svg>'
         result = _scour(svg)
         assert "<path" in result
 
@@ -639,51 +624,37 @@ class TestStraightCurveDetection:
 # Collapse same commands (line 2999)
 # ---------------------------------------------------------------------------
 
+
 class TestCollapseSameCommands:
     """Path with consecutive same commands that should be collapsed."""
 
     def test_consecutive_h_commands_collapsed(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 0 0 h 10 h 20 h 30"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 0 0 h 10 h 20 h 30"/></svg>'
         result = _scour(svg)
         assert "<path" in result
 
     def test_consecutive_v_commands_collapsed(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 0 0 v 10 v 20 v 30"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 0 0 v 10 v 20 v 30"/></svg>'
         result = _scour(svg)
         assert "<path" in result
 
 
 # ---------------------------------------------------------------------------
-# parseListOfPoints edge cases (lines 3063, 3071-3072)
+# parse_list_of_points edge cases (lines 3063, 3071-3072)
 # ---------------------------------------------------------------------------
+
 
 class TestParseListOfPoints:
     """Polygon with odd number of coordinates and invalid values."""
 
     def test_polygon_odd_coordinates(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<polygon points="10 20 30"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><polygon points="10 20 30"/></svg>'
         result = _scour(svg)
         # An odd number of points is invalid; the element should still be present
         assert "polygon" in result
 
     def test_polygon_invalid_numeric_values(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<polygon points="10 abc 30 40"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><polygon points="10 abc 30 40"/></svg>'
         result = _scour(svg)
         assert "polygon" in result
 
@@ -691,6 +662,7 @@ class TestParseListOfPoints:
 # ---------------------------------------------------------------------------
 # Length optimization in styles (lines 3315-3321)
 # ---------------------------------------------------------------------------
+
 
 class TestLengthOptimizationInStyles:
     """Element with length values in styles that can be shortened."""
@@ -706,11 +678,7 @@ class TestLengthOptimizationInStyles:
         assert "1.000" not in result
 
     def test_font_size_in_style_shortened(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<text style="font-size:12.000px">hello</text>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><text style="font-size:12.000px">hello</text></svg>'
         result = _scour(svg)
         assert "12.000" not in result
 
@@ -719,14 +687,13 @@ class TestLengthOptimizationInStyles:
 # Transform optimization (lines 3432, 3471-3472, 3487, 3490, 3493, 3502)
 # ---------------------------------------------------------------------------
 
+
 class TestTransformOptimization:
     """Various transform optimization scenarios."""
 
     def test_translate_y_zero_removed(self):
         svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<rect width="10" height="10" transform="translate(50, 0)"/>'
-            "</svg>"
+            '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10" transform="translate(50, 0)"/></svg>'
         )
         result = _scour(svg)
         # translate(50, 0) should become translate(50)
@@ -745,9 +712,7 @@ class TestTransformOptimization:
 
     def test_two_scales_coalesced(self):
         svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<rect width="10" height="10" transform="scale(2) scale(3)"/>'
-            "</svg>"
+            '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10" transform="scale(2) scale(3)"/></svg>'
         )
         result = _scour(svg)
         # scale(2) scale(3) => scale(6)
@@ -821,6 +786,7 @@ class TestTransformOptimization:
 # Embed rasters error path (lines 3615-3622)
 # ---------------------------------------------------------------------------
 
+
 class TestEmbedRastersError:
     """SVG with image referencing a nonexistent file."""
 
@@ -840,15 +806,12 @@ class TestEmbedRastersError:
 # viewBox with renderer_workaround (lines 3656, 3669, 3675-3678)
 # ---------------------------------------------------------------------------
 
+
 class TestViewBoxRendererWorkaround:
     """Various viewBox and width/height combinations."""
 
     def test_width_with_cm_units_no_viewbox_rewrite(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg" width="10cm" height="5cm">'
-            '<rect width="100" height="50"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10cm" height="5cm"><rect width="100" height="50"/></svg>'
         # With renderer workaround enabled (default), cm units should prevent viewBox rewrite
         result = _scour(svg, ["--renderer-workaround"])
         assert "width" in result
@@ -874,11 +837,7 @@ class TestViewBoxRendererWorkaround:
         assert "viewBox" in result
 
     def test_viewbox_created_when_no_workaround(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">'
-            '<rect width="100" height="100"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100"/></svg>'
         result = _scour(svg, ["--enable-viewboxing", "--no-renderer-workaround"])
         assert "viewBox" in result
 
@@ -887,24 +846,17 @@ class TestViewBoxRendererWorkaround:
 # Serialization with tab indent (line 3833)
 # ---------------------------------------------------------------------------
 
+
 class TestTabIndent:
     """Using --indent=tab."""
 
     def test_tab_indentation(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<rect width="100" height="100"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100"/></svg>'
         result = _scour(svg, ["--indent=tab"])
         assert "\t" in result
 
     def test_space_indentation(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<rect width="100" height="100"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100"/></svg>'
         result = _scour(svg, ["--indent=space"])
         assert "  " not in result or " <" in result  # at least newlines are present
 
@@ -912,6 +864,7 @@ class TestTabIndent:
 # ---------------------------------------------------------------------------
 # xmlns prefix handling (line 3858)
 # ---------------------------------------------------------------------------
+
 
 class TestXmlnsPrefixHandling:
     """SVG with namespaced attributes."""
@@ -936,28 +889,19 @@ class TestXmlnsPrefixHandling:
 # Comment / other node serialization (line 3914)
 # ---------------------------------------------------------------------------
 
+
 class TestCommentNodeSerialization:
     """SVG with comment and unusual node types."""
 
     def test_comment_preserved_by_default(self):
         # By default, comment stripping is off, so comments should be preserved
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            "<!-- This is a comment -->"
-            '<rect width="100" height="100"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><!-- This is a comment --><rect width="100" height="100"/></svg>'
         result = _scour(svg)
         assert "<!--" in result
         assert "This is a comment" in result
 
     def test_comment_stripped_when_enabled(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            "<!-- This is a comment -->"
-            '<rect width="100" height="100"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><!-- This is a comment --><rect width="100" height="100"/></svg>'
         result = _scour(svg, ["--enable-comment-stripping"])
         assert "This is a comment" not in result
 
@@ -976,6 +920,7 @@ class TestCommentNodeSerialization:
 # flowText warning (line 3959)
 # ---------------------------------------------------------------------------
 
+
 class TestFlowTextWarning:
     """SVG with <flowRoot> element should produce a warning."""
 
@@ -990,7 +935,7 @@ class TestFlowTextWarning:
             "</flowRoot>"
             "</svg>"
         )
-        result = _scour(svg)
+        result = _scour(svg)  # noqa: F841 — result exists to trigger the warning path
         captured = capsys.readouterr()
         assert "flow text" in captured.err.lower() or "flowRoot" in captured.err or "flow" in captured.err.lower()
 
@@ -1013,26 +958,18 @@ class TestFlowTextWarning:
 # Empty path removal (line 4105)
 # ---------------------------------------------------------------------------
 
+
 class TestEmptyPathRemoval:
     """SVG with empty <path d=""/>."""
 
     def test_empty_path_removed(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d=""/>'
-            '<rect width="100" height="100"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d=""/><rect width="100" height="100"/></svg>'
         result = _scour(svg)
         assert "<path" not in result
         assert "rect" in result
 
     def test_nonempty_path_kept(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 0 0 L 10 10"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 0 0 L 10 10"/></svg>'
         result = _scour(svg)
         assert "<path" in result or "path" in result
 
@@ -1040,6 +977,7 @@ class TestEmptyPathRemoval:
 # ---------------------------------------------------------------------------
 # parse_args error paths (lines 4499, 4501, 4503-4504, 4510, 4512, 4514)
 # ---------------------------------------------------------------------------
+
 
 class TestParseArgsErrors:
     """parse_args should exit on various invalid inputs."""
@@ -1059,7 +997,7 @@ class TestParseArgsErrors:
     def test_c_precision_greater_than_precision_warns(self, capsys):
         # This should produce a warning but not exit
         options = parse_args(["--set-precision=3", "--set-c-precision=5"])
-        captured = capsys.readouterr()
+        _ = capsys.readouterr()  # consume the warning output
         assert options.cdigits == -1
 
     def test_invalid_indent_type_error(self):
@@ -1082,20 +1020,21 @@ class TestParseArgsErrors:
 
 
 # ---------------------------------------------------------------------------
-# generateDefaultOptions (line 4522) and maybe_gziped_file (lines 4537-4539)
+# generate_default_options (line 4522) and maybe_gziped_file (lines 4537-4539)
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateDefaultOptionsAndGzip:
-    """Test generateDefaultOptions and maybe_gziped_file."""
+    """Test generate_default_options and maybe_gziped_file."""
 
     def test_generate_default_options(self):
-        options = generateDefaultOptions()
+        options = generate_default_options()
         assert hasattr(options, "digits")
         assert hasattr(options, "indent_type")
         assert hasattr(options, "shorten_ids")
 
     def test_sanitize_options_none(self):
-        options = sanitizeOptions()
+        options = sanitize_options()
         assert hasattr(options, "digits")
 
     def test_maybe_gziped_file_svgz(self):
@@ -1144,6 +1083,7 @@ class TestGenerateDefaultOptionsAndGzip:
 # Additional edge cases to fill remaining uncovered lines
 # ---------------------------------------------------------------------------
 
+
 class TestAdditionalEdgeCases:
     """Miscellaneous tests for remaining uncovered lines."""
 
@@ -1151,7 +1091,7 @@ class TestAdditionalEdgeCases:
         svg = (
             '<svg xmlns="http://www.w3.org/2000/svg">'
             '<rect width="100" height="100" style="stroke:none;stroke-width:2;'
-            'stroke-linejoin:round;stroke-miterlimit:4;stroke-linecap:butt;'
+            "stroke-linejoin:round;stroke-miterlimit:4;stroke-linecap:butt;"
             'stroke-dasharray:5,3;stroke-dashoffset:1;stroke-opacity:0.5"/>'
             "</svg>"
         )
@@ -1177,19 +1117,13 @@ class TestAdditionalEdgeCases:
 
     def test_multiple_arc_commands_in_path(self):
         svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 10 80 A 25 25 0 0 1 50 80 A 25 25 0 0 0 90 80"/>'
-            "</svg>"
+            '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 10 80 A 25 25 0 0 1 50 80 A 25 25 0 0 0 90 80"/></svg>'
         )
         result = _scour(svg)
         assert "path" in result
 
     def test_path_with_multiple_subpaths(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<path d="M 10 10 L 20 20 Z M 30 30 L 40 40 Z"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 10 10 L 20 20 Z M 30 30 L 40 40 Z"/></svg>'
         result = _scour(svg)
         assert "path" in result
 
@@ -1197,7 +1131,7 @@ class TestAdditionalEdgeCases:
         svg = (
             '<svg xmlns="http://www.w3.org/2000/svg">'
             '<rect width="100" height="100" style="stroke-opacity:0;stroke:blue;'
-            'stroke-width:2;stroke-linejoin:round;stroke-miterlimit:4;'
+            "stroke-width:2;stroke-linejoin:round;stroke-miterlimit:4;"
             'stroke-linecap:butt;stroke-dasharray:5;stroke-dashoffset:1"/>'
             "</svg>"
         )
@@ -1208,15 +1142,11 @@ class TestAdditionalEdgeCases:
     def test_scour_xml_file(self):
         with tempfile.NamedTemporaryFile(suffix=".svg", delete=False, mode="w") as tmp:
             tmp_path = tmp.name
-            tmp.write(
-                '<svg xmlns="http://www.w3.org/2000/svg">'
-                '<rect width="100" height="100"/>'
-                "</svg>"
-            )
+            tmp.write('<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100"/></svg>')
         try:
             options = parse_args([])
-            doc = scourXmlFile(tmp_path, options)
-            # scourXmlFile returns an xml.dom.minidom Document
+            doc = scour_xml_file(tmp_path, options)
+            # scour_xml_file returns an xml.dom.minidom Document
             assert doc.documentElement.nodeName == "svg"
             assert doc.documentElement.getElementsByTagName("rect")
         finally:
@@ -1239,11 +1169,7 @@ class TestAdditionalEdgeCases:
         assert "stop" in result
 
     def test_newlines_option(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<rect width="100" height="100"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100"/></svg>'
         result = _scour(svg, ["--strip-xml-prolog", "--no-line-breaks"])
         assert "\n" not in result.strip() or result.count("\n") <= 1
 
@@ -1263,34 +1189,49 @@ class TestAdditionalEdgeCases:
         assert "linearGradient" in result or "stop" in result
 
     def test_protect_ids(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<rect id="keepme" width="100" height="100"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect id="keepme" width="100" height="100"/></svg>'
         result = _scour(svg, ["--enable-id-stripping", "--protect-ids-list=keepme"])
         assert "keepme" in result
 
     def test_verbose_output(self, capsys):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<rect width="100" height="100"/>'
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100"/></svg>'
         options = parse_args(["-v"])
         stats = ScourStats()
-        scourString(svg, options, stats)
+        scour_string(svg, options, stats)
         # Just verify it doesn't crash
+
+    def test_replace_url_refs_helper(self):
+        """Exercise the _replace_url_refs helper for url(#id) replacement."""
+        from svg_polish.optimizer import _replace_url_refs
+
+        # Unquoted form
+        result, count = _replace_url_refs("fill: url(#grad1)", "grad1", "g")
+        assert count == 1
+        assert result == "fill: url(#g)"
+
+        # Single-quoted form
+        result, count = _replace_url_refs("fill: url('#grad1')", "grad1", "g")
+        assert count == 1
+        assert result == "fill: url(#g)"
+
+        # Double-quoted form
+        result, count = _replace_url_refs('fill: url("#grad1")', "grad1", "g")
+        assert count == 1
+        assert result == "fill: url(#g)"
+
+        # No match
+        result, count = _replace_url_refs("fill: red", "grad1", "g")
+        assert count == 0
+        assert result == "fill: red"
+
+        # Multiple matches
+        result, count = _replace_url_refs("fill: url(#a); stroke: url(#a)", "a", "b")
+        assert count == 2
+        assert result == "fill: url(#b); stroke: url(#b)"
 
     def test_group_collapse_nested(self):
         # group_collapse is enabled by default; verify nested groups are collapsed
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            "<g><g><g>"
-            '<rect width="100" height="100"/>'
-            "</g></g></g>"
-            "</svg>"
-        )
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"><g><g><g><rect width="100" height="100"/></g></g></g></svg>'
         result = _scour(svg)
         # Nested groups should be collapsed (default behavior)
         assert result.count("<g") < 4
