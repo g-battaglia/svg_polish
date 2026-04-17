@@ -95,10 +95,12 @@ every library-specific failure.
 * **Trusted pipelines**: if you must process inputs that legitimately use
   DOCTYPE entities, set `allow_xml_entities=True` on a per-call basis — never
   globally.
-* **`xml_backend="lxml"` (extra `[fast]`)**: the lxml backend is implemented
-  in C. Even with `defusedxml[lxml]` enabled, lxml's attack surface is larger
-  than `xml.dom.minidom`'s. Prefer the default `minidom` backend for inputs
-  arriving from the public internet.
+* **`xml_backend`**: v1.0 only ships `"minidom"` (the safe default backed by
+  `defusedxml.minidom`). The pluggable `lxml` backend planned for v1.x will
+  trade attack-surface for throughput — even with `defusedxml[lxml]` enabled,
+  lxml's libxml2 core is materially larger than `xml.dom.minidom`'s. When
+  that backend ships, prefer `minidom` for inputs arriving from the public
+  internet and `lxml` only inside trusted pipelines.
 * Always cap input at the application boundary (e.g. nginx
   `client_max_body_size`) **in addition to** `max_input_bytes`. Defence in
   depth is cheap.

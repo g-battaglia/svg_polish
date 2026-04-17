@@ -97,7 +97,7 @@ Frozen, slotted dataclass. Pass an instance to any `optimize*` function. Fields 
 | `digits` | `int` | `5` | Significant-digit precision for normal coordinates. |
 | `cdigits` | `int` | `-1` | Precision for control points (`-1` → mirror `digits`). |
 | `decimal_engine` | `Literal["decimal","float"]` | `"decimal"` | `"float"` is faster (~3-5× on dense paths) but lossy. |
-| `xml_backend` | `Literal["auto","minidom","lxml"]` | `"auto"` | `lxml` extra unlocks bigger speedups; reserved for v1.x. |
+| `xml_backend` | `Literal["minidom"]` | `"minidom"` | Only `defusedxml.minidom` ships in v1.0; pluggable `lxml` backend planned for v1.x. |
 | `allow_xml_entities` | `bool` | `False` | Enable only on **trusted** input; emits a `SecurityWarning`. |
 | `max_input_bytes` | `int \| None` | `100 * 1024 * 1024` | Reject inputs larger than this. `None` disables. |
 | `shorten_ids` | `bool` | `False` | Replace long IDs with short ones (`a`, `b`, …). |

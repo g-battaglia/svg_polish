@@ -52,27 +52,20 @@ parser dominates, so switching to floats yields a meaningful speedup.
 - You produce content-addressed assets (cache keys derived from the
   output bytes).
 
-## When to use lxml backend
+## XML backend (planned for v1.x)
 
-`OptimizeOptions(xml_backend="lxml")` (or `"auto"`) selects the
-optional `lxml` backend if installed:
+v1.0 ships a single backend — `defusedxml.minidom`, exposed as
+`OptimizeOptions(xml_backend="minidom")` — selected for its zero
+native-code dependency and the smallest possible attack surface on
+untrusted input. The field is typed as a single-value `Literal` so
+constructing `OptimizeOptions(xml_backend="lxml")` raises
+`InvalidOptionError` rather than silently doing nothing.
 
-```bash
-pip install "svg-polish[fast]"
-```
-
-lxml is implemented in C and parses + serialises XML 3-5× faster than
-`xml.dom.minidom` on inputs over ~50 KB. The optional install also
-pulls `defusedxml[lxml]` so the secure-by-default posture is preserved.
-
-The `"auto"` value picks lxml when (a) the package is importable and
-(b) the input is larger than ~10 KB; small inputs incur lxml's
-import-and-init overhead, which dominates the optimisation cost.
-
-> **Note**: the lxml backend wiring is reserved for v1.x. Today the
-> setting is accepted and validated but the optimiser still runs on
-> `xml.dom.minidom`; the field is in place so v1.x callers don't have
-> to rewrite their option construction when the backend ships.
+A pluggable `lxml` backend (3-5× faster on inputs > 50 KB) is planned
+for a v1.x release alongside the optional `svg-polish[fast]` extra.
+Until then, `xml.dom.minidom` plus the optimisations already shipped
+in v1.0 (thread-local Decimal context, LRU regex cache, lazy imports)
+keeps wall-clock time well within the budget for typical workloads.
 
 ## Tuning precision
 

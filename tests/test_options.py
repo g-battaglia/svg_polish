@@ -27,7 +27,7 @@ class TestDefaults:
     def test_lossless_engine_default(self) -> None:
         opts = OptimizeOptions()
         assert opts.decimal_engine == "decimal"
-        assert opts.xml_backend == "auto"
+        assert opts.xml_backend == "minidom"
 
     def test_precision_defaults(self) -> None:
         opts = OptimizeOptions()
@@ -81,6 +81,17 @@ class TestValidation:
     def test_invalid_xml_backend(self) -> None:
         with pytest.raises(InvalidOptionError, match="invalid xml_backend"):
             OptimizeOptions(xml_backend="expat")  # type: ignore[arg-type]
+
+    def test_xml_backend_lxml_rejected_in_v1_0(self) -> None:
+        # lxml backend is planned for a v1.x release but not wired yet;
+        # accepting it silently would mislead users into thinking they have
+        # the speedup. Reject loudly until the proxy adapter ships.
+        with pytest.raises(InvalidOptionError, match="only 'minidom'"):
+            OptimizeOptions(xml_backend="lxml")  # type: ignore[arg-type]
+
+    def test_xml_backend_auto_rejected_in_v1_0(self) -> None:
+        with pytest.raises(InvalidOptionError, match="only 'minidom'"):
+            OptimizeOptions(xml_backend="auto")  # type: ignore[arg-type]
 
     def test_max_input_bytes_too_small(self) -> None:
         with pytest.raises(InvalidOptionError, match="max_input_bytes must be >= 1024"):

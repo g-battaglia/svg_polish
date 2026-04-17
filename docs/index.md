@@ -17,8 +17,8 @@ output renders identically to the input. The library is fully typed
 - [CLI Reference](cli.md) — every command-line flag.
 - [Optimization Guide](optimizations.md) — what `svg_polish` rewrites
   and how.
-- [Performance](performance.md) — when to flip `decimal_engine`,
-  `xml_backend`, `digits`; benchmark workflow.
+- [Performance](performance.md) — when to flip `decimal_engine` and
+  `digits`; benchmark workflow; v1.x lxml backend roadmap.
 - [Security](security.md) — usage patterns for untrusted input.
 - [Architecture](architecture.md) — module layout, layered design,
   pipeline.

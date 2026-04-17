@@ -5,8 +5,9 @@
 - Python 3.10 or later
 
 `svg_polish` depends on `defusedxml` for secure-by-default XML parsing.
-The optional `[fast]` extra adds `lxml` for ~3–5× faster parsing on
-larger inputs.
+A `[fast]` extra is reserved for the v1.x `lxml`-backed XML engine
+(~3–5× faster on larger inputs); in v1.0 the only wired backend is
+`defusedxml.minidom`.
 
 ## Installation
 
@@ -18,12 +19,6 @@ With `uv`:
 
 ```bash
 uv add svg-polish
-```
-
-For the optional fast XML backend:
-
-```bash
-pip install "svg-polish[fast]"
 ```
 
 From source:
@@ -155,5 +150,5 @@ The `.svgz` extension triggers gzip-compressed output automatically.
 - [Configuration Guide](configuration.md) — `OptimizeOptions` field-by-field.
 - [CLI Reference](cli.md) — every CLI flag.
 - [Performance](performance.md) — when to flip `decimal_engine` /
-  `xml_backend` / `digits`.
+  `digits`, and what the v1.x `lxml` backend will buy you.
 - [Security](security.md) — using `svg_polish` on untrusted input.

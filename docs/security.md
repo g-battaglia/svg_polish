@@ -76,15 +76,21 @@ optimize(blob, opts)
 This check runs **before** the parser allocates memory, so it costs O(1) for
 `bytes` inputs and a single UTF-8 encode for `str` inputs.
 
-## Choosing the XML backend
+## XML backend
 
-| Backend | Default? | Native code | Notes |
-|---|---|---|---|
-| `minidom` | yes | none (pure Python via `defusedxml.minidom`) | Recommended for untrusted input. |
-| `lxml` | opt-in via `pip install svg-polish[fast]` | yes (libxml2/libxslt) | 3–5× faster on large files. Larger attack surface — prefer minidom for input from the public internet. |
-| `auto` | — | — | Picks lxml when available **and** input ≥ 10 KB. Treat as `lxml` for risk-assessment purposes. |
+v1.0 ships only the `defusedxml.minidom` backend, exposed as
+`OptimizeOptions(xml_backend="minidom")` (the only accepted value). This is the
+safest option for untrusted input: pure Python, no native code, the smallest
+possible attack surface, and explicit rejection of every entity-expansion
+class via defusedxml.
 
-Set explicitly via `OptimizeOptions(xml_backend="minidom" | "lxml" | "auto")`.
+A v1.x release will add an opt-in `lxml` backend (3–5× faster on inputs over
+~50 KB) behind the optional `svg-polish[fast]` extra. lxml is implemented in
+C (libxml2 / libxslt), so even with `defusedxml[lxml]` enabled its attack
+surface is materially larger than minidom's. When that backend ships, the
+recommendation will remain: keep `minidom` for input arriving from the
+public internet; switch to `lxml` only inside trusted pipelines that need
+the throughput.
 
 ## What `svg_polish` does **not** do
 

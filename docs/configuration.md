@@ -100,7 +100,7 @@ discussion.
 | `digits` | `int` | `5` | Significant digits for normal coordinates. |
 | `cdigits` | `int` | `-1` | Significant digits for control points; `-1` mirrors `digits`. |
 | `decimal_engine` | `Literal["decimal","float"]` | `"decimal"` | `"float"` is faster but lossy. |
-| `xml_backend` | `Literal["auto","minidom","lxml"]` | `"auto"` | `lxml` extra unlocks larger speedups; wired-up backend ships in v1.x. |
+| `xml_backend` | `Literal["minidom"]` | `"minidom"` | Only `defusedxml.minidom` is wired in v1.0; the pluggable `lxml` backend is planned for v1.x. |
 | `allow_xml_entities` | `bool` | `False` | Enable only on **trusted** input — emits `SecurityWarning`. |
 | `max_input_bytes` | `int \| None` | `100 MB` | Reject inputs larger than this. `None` disables. |
 | `simple_colors` | `bool` | `True` | Convert colors to the shortest equivalent form. |

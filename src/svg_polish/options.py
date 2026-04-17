@@ -72,13 +72,14 @@ class OptimizeOptions:
     # ------------------------------------------------------------------ #
     # XML backend                                                        #
     # ------------------------------------------------------------------ #
-    xml_backend: Literal["auto", "minidom", "lxml"] = "auto"
+    xml_backend: Literal["minidom"] = "minidom"
     """XML parser/serializer backend.
 
-    ``"auto"`` picks ``lxml`` when available **and** the input is large
-    enough to amortise its startup cost. ``"minidom"`` is the safe default
-    backed by :mod:`defusedxml.minidom`. ``"lxml"`` requires installing the
-    optional ``[fast]`` extra. *Wired up in v1.0 Sprint 6 (V3).*
+    v1.0 ships only the :mod:`defusedxml.minidom` backend (the field is
+    typed and validated so tooling can already see the shape). A pluggable
+    ``lxml`` backend is planned for a v1.x release alongside the optional
+    ``svg-polish[fast]`` extra; until then this field exists for forward
+    compatibility but admits a single value.
     """
 
     allow_xml_entities: bool = False
@@ -222,8 +223,8 @@ class OptimizeOptions:
             raise InvalidOptionError(f"invalid indent_type: {self.indent_type!r}")
         if self.decimal_engine not in ("decimal", "float"):
             raise InvalidOptionError(f"invalid decimal_engine: {self.decimal_engine!r}")
-        if self.xml_backend not in ("auto", "minidom", "lxml"):
-            raise InvalidOptionError(f"invalid xml_backend: {self.xml_backend!r}")
+        if self.xml_backend != "minidom":
+            raise InvalidOptionError(f"invalid xml_backend: {self.xml_backend!r} (only 'minidom' is supported in v1.0)")
         if self.max_input_bytes is not None and self.max_input_bytes < 1024:
             raise InvalidOptionError(f"max_input_bytes must be >= 1024 or None (got {self.max_input_bytes!r})")
 

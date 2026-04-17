@@ -16,8 +16,9 @@ uv sync
 ```
 
 This installs runtime dependencies (`defusedxml`) plus the dev tooling
-(`pytest`, `pytest-benchmark`, `coverage`, `ruff`, `mypy`,
-`poethepoet`, optionally `lxml` if `[fast]` is selected).
+(`pytest`, `pytest-benchmark`, `coverage`, `ruff`, `mypy`, `poethepoet`).
+The `[fast]` extra is reserved for the v1.x `lxml` backend and is
+inert in v1.0.
 
 ## Workflow
 

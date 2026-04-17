@@ -15,11 +15,9 @@ pip uninstall scour
 pip install svg-polish
 ```
 
-For the optional fast XML backend:
-
-```bash
-pip install "svg-polish[fast]"
-```
+A `svg-polish[fast]` extra is reserved for the v1.x lxml-backed XML
+engine; in v1.0 it currently installs no extra dependencies (the
+`xml_backend="lxml"` option is not yet wired).
 
 ## CLI
 

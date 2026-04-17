@@ -29,11 +29,10 @@ Requires **Python 3.10+**.
 pip install svg-polish
 ```
 
-The default install is pure Python and depends only on `defusedxml`. For the optional fast XML backend (`lxml`, ~3-5× faster on large files):
-
-```bash
-pip install "svg-polish[fast]"
-```
+The install is pure Python and depends only on `defusedxml`. A
+`svg-polish[fast]` extra is reserved for the v1.x `lxml`-backed XML
+engine (~3–5× faster on large files); v1.0 ships only the
+`defusedxml.minidom` backend.
 
 ## Quick start
 

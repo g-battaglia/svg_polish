@@ -45,10 +45,11 @@ optimizer for Python.
   and transform parsers on native `float` for ~3–5× faster numeric
   arithmetic on dense paths. Default `"decimal"` keeps the lossless,
   bit-for-bit-reproducible behaviour.
-- `OptimizeOptions.xml_backend="auto"|"minidom"|"lxml"` field is
-  validated and accepted; the `lxml` extra (`pip install
-  svg-polish[fast]`) installs the optional dependency. The wired-up
-  backend ships in a v1.x point release.
+- `OptimizeOptions.xml_backend="minidom"` is the only backend in v1.0
+  (typed as a single-value `Literal`; passing `"lxml"` or `"auto"`
+  raises `InvalidOptionError` rather than silently no-op'ing). A
+  pluggable `lxml` backend behind the optional `svg-polish[fast]`
+  extra is planned for a v1.x release.
 - Per-call thread-local `Decimal` precision context
   (`precision_scope`) — `optimize_*` is reentrant and thread-safe.
   Different `digits` settings on concurrent threads produce
