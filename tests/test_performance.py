@@ -13,8 +13,10 @@ since they are deterministic and coverage-independent.
 
 from __future__ import annotations
 
+import statistics
 import sys
 import time
+from collections.abc import Callable
 
 import pytest
 
@@ -26,13 +28,38 @@ def _coverage_active() -> bool:
     return "coverage" in sys.modules and getattr(sys, "gettrace", lambda: None)() is not None
 
 
-def _time_it(func: object, iterations: int = 1) -> float:
-    """Time a callable in seconds."""
+def _time_it(func: Callable[[], object], iterations: int = 1) -> float:
+    """Time a callable in seconds, summed over ``iterations`` runs."""
     start = time.perf_counter()
     for _ in range(iterations):
-        if callable(func):
-            func()
+        func()
     return time.perf_counter() - start
+
+
+def _median_ratio(
+    small: Callable[[], object],
+    large: Callable[[], object],
+    *,
+    trials: int = 5,
+    iterations: int = 3,
+) -> tuple[float, float, float]:
+    """Return (median ratio, median small time, median large time) across ``trials``.
+
+    Median is robust against transient CI noise (a single GC pause or scheduler
+    blip in either bucket would otherwise dominate the ratio). Each trial
+    independently times both buckets back-to-back so they share the same
+    machine state.
+    """
+    smalls: list[float] = []
+    larges: list[float] = []
+    ratios: list[float] = []
+    for _ in range(trials):
+        small_t = _time_it(small, iterations)
+        large_t = _time_it(large, iterations)
+        smalls.append(small_t)
+        larges.append(large_t)
+        ratios.append(large_t / small_t)
+    return statistics.median(ratios), statistics.median(smalls), statistics.median(larges)
 
 
 # Cache-bound tests are deterministic; only the wall-clock tests skip under coverage.
@@ -46,12 +73,13 @@ class TestPathScaling:
     """clean_path must scale linearly with segment count."""
 
     def test_clean_path_linear_time(self) -> None:
-        """Path optimization should scale roughly linearly, not quadratically.
+        """Path optimization scales linearly with segment count, not quadratically.
 
-        If clean_path were O(n²), 100x more segments would take ~10000x longer.
-        With O(n), 100x more segments should take ~100x longer.
-        Threshold set well above linear to absorb CI variance while still
-        catching genuine quadratic regressions (which would be ~10000x).
+        100× more segments must take ≲ 250× longer (median over 5 trials).
+        A genuine O(n²) regression would be ~10 000×, so the threshold catches
+        it with > 40× margin while staying tight enough to flag a real slowdown.
+        Median-of-trials absorbs single-event CI noise (GC pause, scheduler
+        blip) without inflating the bound.
         """
         small_segments = " ".join(f"L{i},{i}" for i in range(100))
         small_svg = f'<svg xmlns="http://www.w3.org/2000/svg"><path d="M0,0 {small_segments}"/></svg>'
@@ -62,13 +90,15 @@ class TestPathScaling:
         scour_string(small_svg)
         scour_string(large_svg)
 
-        iterations = 3
-        small_time = _time_it(lambda: scour_string(small_svg), iterations)
-        large_time = _time_it(lambda: scour_string(large_svg), iterations)
-
-        ratio = large_time / small_time
-        assert ratio < 1000, (
-            f"Scaling ratio {ratio:.1f}x exceeds 1000x threshold. Small: {small_time:.3f}s, Large: {large_time:.3f}s"
+        ratio, small_med, large_med = _median_ratio(
+            lambda: scour_string(small_svg),
+            lambda: scour_string(large_svg),
+            trials=5,
+            iterations=3,
+        )
+        assert ratio < 250, (
+            f"Median scaling ratio {ratio:.1f}× exceeds 250× threshold. "
+            f"Median small: {small_med:.3f}s, median large: {large_med:.3f}s"
         )
 
 
