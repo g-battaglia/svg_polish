@@ -82,6 +82,10 @@ class TestValidation:
         with pytest.raises(InvalidOptionError, match="invalid xml_backend"):
             OptimizeOptions(xml_backend="expat")  # type: ignore[arg-type]
 
+    def test_invalid_attr_quote(self) -> None:
+        with pytest.raises(InvalidOptionError, match="invalid attr_quote"):
+            OptimizeOptions(attr_quote="curly")  # type: ignore[arg-type]
+
     def test_xml_backend_lxml_rejected_in_v1_0(self) -> None:
         # lxml backend is planned for a v1.x release but not wired yet;
         # accepting it silently would mislead users into thinking they have

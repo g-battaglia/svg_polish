@@ -217,6 +217,61 @@ class TestSerializeXMLIndentation:
 
 
 # ---------------------------------------------------------------------------
+# serialize_xml — attribute-quote preference
+# ---------------------------------------------------------------------------
+
+
+class TestSerializeXMLAttrQuote:
+    """``attr_quote`` chooses the preferred delimiter without breaking output."""
+
+    def test_default_prefers_double(self) -> None:
+        """Default behaviour keeps double quotes around attribute values."""
+        from svg_polish import OptimizeOptions, optimize
+
+        out = optimize(
+            '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>',
+            OptimizeOptions(indent_type="none", newlines=False),
+        )
+        assert 'width="10"' in out
+        assert "width='10'" not in out
+
+    def test_single_emits_apostrophes(self) -> None:
+        """``attr_quote='single'`` switches every attribute to apostrophes."""
+        from svg_polish import OptimizeOptions, optimize
+
+        out = optimize(
+            '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>',
+            OptimizeOptions(indent_type="none", newlines=False, attr_quote="single"),
+        )
+        assert "width='10'" in out
+        assert "height='10'" in out
+
+    def test_single_flips_to_double_when_value_has_apostrophe(self) -> None:
+        """Apostrophe-bearing values flip back to double quotes — output stays well-formed."""
+        from svg_polish import OptimizeOptions, optimize
+
+        out = optimize(
+            '<svg xmlns="http://www.w3.org/2000/svg"><text title="John\'s chart">x</text></svg>',
+            OptimizeOptions(indent_type="none", newlines=False, attr_quote="single"),
+        )
+        # The apostrophe in the value must NOT have been escaped or destroyed.
+        assert "John's chart" in out
+        assert 'title="John\'s chart"' in out
+
+    def test_double_flips_to_single_when_value_has_double_quote(self) -> None:
+        """Double-quote-bearing values flip to apostrophes under the default."""
+        from svg_polish import OptimizeOptions, optimize
+
+        # Use the entity form on input so the parser can accept the inner ".
+        out = optimize(
+            '<svg xmlns="http://www.w3.org/2000/svg"><text title="say &quot;hi&quot;">x</text></svg>',
+            OptimizeOptions(indent_type="none", newlines=False),
+        )
+        # The flipped delimiter avoids escaping; the value round-trips intact.
+        assert "title='say \"hi\"'" in out
+
+
+# ---------------------------------------------------------------------------
 # Idempotency of full optimization pipeline
 # ---------------------------------------------------------------------------
 

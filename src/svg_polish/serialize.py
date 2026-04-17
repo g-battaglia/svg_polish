@@ -67,24 +67,29 @@ def make_well_formed(text: str, quote_dict: dict[str, str] | None = None) -> str
     return "".join(quote_dict.get(c, c) for c in text)
 
 
-def choose_quote_character(value: str) -> tuple[str, dict[str, str]]:
-    """Pick ``"`` or ``'`` for an attribute, whichever needs fewer escapes.
+def choose_quote_character(value: str, prefer: str = "double") -> tuple[str, dict[str, str]]:
+    """Pick ``"`` or ``'`` for an attribute, honouring *prefer* unless escapes mount.
 
-    Counts the number of double quotes in *value*; if there are zero (the
-    common case) or no more than the single-quote count, double quotes win.
-    The associated XML-entity escape map is returned alongside so the
-    caller can pass it straight into :func:`make_well_formed`.
+    *prefer* is the user-requested delimiter (``"double"`` or ``"single"``).
+    The function returns the preferred delimiter unless the value contains
+    enough occurrences of it to make the alternative delimiter cheaper —
+    the output is therefore always well-formed regardless of the value.
+
+    The associated XML-entity escape map is returned alongside so the caller
+    can pass it straight into :func:`make_well_formed`.
     """
     quot_count = value.count('"')
-    if quot_count == 0 or quot_count <= value.count("'"):
-        # Fewest "-symbols (if there are 0, we pick this to avoid spending
-        # time counting the '-symbols as it won't matter).
-        quote = '"'
-        xml_ent = XML_ENTS_ESCAPE_QUOT
-    else:
-        quote = "'"
-        xml_ent = XML_ENTS_ESCAPE_APOS
-    return quote, xml_ent
+    apos_count = value.count("'")
+    if prefer == "single":
+        # Single quotes preferred unless the value carries strictly more
+        # apostrophes than double-quotes (then double-quoting is cheaper).
+        if apos_count == 0 or apos_count <= quot_count:
+            return "'", XML_ENTS_ESCAPE_APOS
+        return '"', XML_ENTS_ESCAPE_QUOT
+    # ``"double"`` (default): mirror the previous behaviour.
+    if quot_count == 0 or quot_count <= apos_count:
+        return '"', XML_ENTS_ESCAPE_QUOT
+    return "'", XML_ENTS_ESCAPE_APOS
 
 
 def _attribute_sort_key_function(attribute: Attr) -> tuple[int, str]:
@@ -187,10 +192,14 @@ def serialize_xml(
     outParts.extend([(indent_type * indent_depth), "<", element.nodeName])
 
     # Attributes are sorted into canonical SVG output order.
+    # ``attr_quote`` is part of OptimizeOptions but the legacy bridge tunnels
+    # through optparse.Values; getattr keeps callers that build a bare
+    # ``optparse.Values`` (e.g. legacy tests) working without surprises.
+    attr_quote_pref = getattr(options, "attr_quote", "double")
     attrs = attributes_ordered_for_output(element)
     for attr in attrs:
         attrValue = attr.nodeValue
-        quote, xml_ent = choose_quote_character(attrValue)
+        quote, xml_ent = choose_quote_character(attrValue, attr_quote_pref)
         attrValue = make_well_formed(attrValue, xml_ent)
 
         if attr.nodeName == "style":

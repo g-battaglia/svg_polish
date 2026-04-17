@@ -171,6 +171,15 @@ class OptimizeOptions:
     strip_xml_space_attribute: bool = False
     """Drop ``xml:space="preserve"`` from the root element."""
 
+    attr_quote: Literal["double", "single"] = "double"
+    """Preferred attribute-value delimiter for the serialized output.
+
+    ``"double"`` (default) emits ``attr="value"``; ``"single"`` emits
+    ``attr='value'``. The serializer **always** flips to the other delimiter
+    for individual attributes whose value contains the preferred one, so the
+    output is guaranteed well-formed regardless of the choice.
+    """
+
     # ------------------------------------------------------------------ #
     # IDs                                                                #
     # ------------------------------------------------------------------ #
@@ -221,6 +230,8 @@ class OptimizeOptions:
             raise InvalidOptionError(f"indent_depth must be >= 0 (got {self.indent_depth!r})")
         if self.indent_type not in ("space", "tab", "none"):
             raise InvalidOptionError(f"invalid indent_type: {self.indent_type!r}")
+        if self.attr_quote not in ("double", "single"):
+            raise InvalidOptionError(f"invalid attr_quote: {self.attr_quote!r}")
         if self.decimal_engine not in ("decimal", "float"):
             raise InvalidOptionError(f"invalid decimal_engine: {self.decimal_engine!r}")
         if self.xml_backend != "minidom":

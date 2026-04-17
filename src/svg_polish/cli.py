@@ -279,6 +279,15 @@ _option_group_formatting.add_option(
     default=False,
     help='strip the xml:space="preserve" attribute from the root SVG element',
 )
+_option_group_formatting.add_option(
+    "--attr-quote",
+    action="store",
+    type="string",
+    dest="attr_quote",
+    default="double",
+    metavar="STYLE",
+    help="preferred attribute delimiter: double, single (default: %default)",
+)
 _options_parser.add_option_group(_option_group_formatting)
 
 _option_group_ids = optparse.OptionGroup(_options_parser, "ID attributes")
@@ -359,6 +368,8 @@ def parse_args(args: list[str] | None = None, ignore_additional_args: bool = Fal
         )
     if options.indent_type not in ["tab", "space", "none"]:
         _options_parser.error("Invalid value for --indent, see --help")
+    if options.attr_quote not in ["double", "single"]:
+        _options_parser.error("Invalid value for --attr-quote, see --help")
     if options.indent_depth < 0:
         _options_parser.error("Value for --nindent should be positive (or zero), see --help")
     if options.infilename and options.outfilename and options.infilename == options.outfilename:
