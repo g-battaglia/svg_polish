@@ -24,7 +24,23 @@ from xml.dom import Node
 from xml.dom.minidom import Element
 
 from svg_polish.constants import NS, svgAttributes
-from svg_polish.types import StyleMap, SVGLength
+from svg_polish.types import StyleMap, SVGLength, Unit
+
+
+def _try_float(value: str) -> float | None:
+    """Parse *value* as a float, returning None for non-numeric inputs.
+
+    Used by :func:`repair_style` to skip optimizations that compare a style
+    property against zero when the value is a CSS function (``var(--x)``,
+    ``calc(...)``), a keyword (``inherit``, ``currentColor``), or anything
+    else that ``float()`` cannot handle. Scour 0.38.2 raises ``ValueError``
+    in this situation; svg_polish prefers to leave the property untouched.
+    """
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
 
 __all__ = [
     "_get_style",
@@ -132,7 +148,7 @@ def repair_style(node: Element, options: optparse.Values) -> int:
         # Here is where we can weed out unnecessary styles like:
         #  opacity:1
         if "opacity" in styleMap:
-            opacity = float(styleMap["opacity"])
+            opacity = _try_float(styleMap["opacity"])
             # if opacity='0' then all fill and stroke properties are useless, remove them
             if opacity == 0.0:
                 for uselessStyle in [
@@ -184,7 +200,7 @@ def repair_style(node: Element, options: optparse.Values) -> int:
 
         #  fill-opacity: 0
         if "fill-opacity" in styleMap:
-            fillOpacity = float(styleMap["fill-opacity"])
+            fillOpacity = _try_float(styleMap["fill-opacity"])
             if fillOpacity == 0.0:
                 for uselessFillStyle in ["fill", "fill-rule"]:
                     if uselessFillStyle in styleMap and not style_inherited_by_child(node, uselessFillStyle):
@@ -193,7 +209,7 @@ def repair_style(node: Element, options: optparse.Values) -> int:
 
         #  stroke-opacity: 0
         if "stroke-opacity" in styleMap:
-            strokeOpacity = float(styleMap["stroke-opacity"])
+            strokeOpacity = _try_float(styleMap["stroke-opacity"])
             if strokeOpacity == 0.0:
                 for uselessStrokeStyle in [
                     "stroke",
@@ -210,7 +226,9 @@ def repair_style(node: Element, options: optparse.Values) -> int:
         # stroke-width: 0
         if "stroke-width" in styleMap:
             strokeWidth = SVGLength(styleMap["stroke-width"])
-            if strokeWidth.value == 0.0:
+            # SVGLength returns value=0 with units=INVALID for unparseable inputs
+            # (var(--x), calc(...), inherit, …) — those must NOT be treated as 0.
+            if strokeWidth.units != Unit.INVALID and strokeWidth.value == 0.0:
                 for uselessStrokeStyle in [
                     "stroke",
                     "stroke-linejoin",

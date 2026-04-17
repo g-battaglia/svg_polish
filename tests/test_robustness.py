@@ -156,3 +156,72 @@ class TestStressInputs:
         result = scour_string(svg)
         assert "<svg" in result
         assert "<rect" in result
+
+
+# ---------------------------------------------------------------------------
+# Non-numeric style values (CSS var(), calc(), keywords)
+# ---------------------------------------------------------------------------
+
+
+class TestNonNumericStyleValues:
+    """``repair_style`` must not crash on CSS values that aren't plain floats.
+
+    Real-world SVGs (e.g. astrology charts emitted by kerykeion) embed
+    ``style="fill-opacity: var(--theme-opacity, 0.5)"`` and similar
+    constructs. Scour 0.38.2 raises ``ValueError`` here; svg_polish leaves
+    the property untouched and continues.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "var(--my-opacity, 0.5)",
+            "var(--my-opacity)",
+            "calc(1 - 0.5)",
+            "inherit",
+            "currentColor",
+        ],
+    )
+    def test_fill_opacity_non_numeric_does_not_crash(self, value: str) -> None:
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+            f'<rect width="10" height="10" style="fill: red; fill-opacity: {value}"/>'
+            "</svg>"
+        )
+        result = scour_string(svg)
+        assert value in result, f"value {value!r} must be preserved verbatim"
+        assert 'fill="red"' in result or "fill: red" in result or "fill:red" in result
+
+    @pytest.mark.parametrize("value", ["var(--x, 0.5)", "calc(0.5)", "inherit"])
+    def test_stroke_opacity_non_numeric_does_not_crash(self, value: str) -> None:
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+            f'<rect width="10" height="10" style="stroke: blue; stroke-opacity: {value}"/>'
+            "</svg>"
+        )
+        result = scour_string(svg)
+        assert value in result
+
+    @pytest.mark.parametrize("value", ["var(--x, 0.5)", "calc(0.5)", "inherit"])
+    def test_opacity_non_numeric_does_not_crash(self, value: str) -> None:
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+            f'<rect width="10" height="10" style="fill: red; opacity: {value}"/>'
+            "</svg>"
+        )
+        result = scour_string(svg)
+        assert value in result
+        # opacity != 0 ⇒ fill must NOT be stripped
+        assert "fill" in result
+
+    @pytest.mark.parametrize("value", ["var(--w, 2)", "calc(1 + 1)", "inherit"])
+    def test_stroke_width_non_numeric_does_not_crash(self, value: str) -> None:
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+            f'<rect width="10" height="10" style="stroke: blue; stroke-width: {value}"/>'
+            "</svg>"
+        )
+        result = scour_string(svg)
+        assert value in result
+        # stroke-width is unparseable ⇒ stroke must NOT be stripped
+        assert "stroke" in result
