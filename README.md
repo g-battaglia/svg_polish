@@ -44,7 +44,25 @@ from svg_polish import optimize
 optimized = optimize('<svg xmlns="http://www.w3.org/2000/svg">…</svg>')
 ```
 
-That's the whole pitch. Pass `OptimizeOptions` for tuning:
+That's the whole pitch. Read from disk, write to disk:
+
+```python
+from pathlib import Path
+from svg_polish import optimize, optimize_path
+
+with open("input.svg", encoding="utf-8") as f:
+    svg = f.read()
+
+optimized = optimize(svg)
+
+with open("output.svg", "w", encoding="utf-8") as f:
+    f.write(optimized)
+
+# or, in one line via the path-aware helper:
+Path("output.svg").write_text(optimize_path("input.svg"), encoding="utf-8")
+```
+
+Pass `OptimizeOptions` for tuning:
 
 ```python
 from svg_polish import optimize, OptimizeOptions
