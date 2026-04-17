@@ -166,10 +166,9 @@ class TestStressInputs:
 class TestNonNumericStyleValues:
     """``repair_style`` must not crash on CSS values that aren't plain floats.
 
-    Real-world SVGs (e.g. astrology charts emitted by kerykeion) embed
-    ``style="fill-opacity: var(--theme-opacity, 0.5)"`` and similar
-    constructs. Scour 0.38.2 raises ``ValueError`` here; svg_polish leaves
-    the property untouched and continues.
+    Real-world SVGs frequently embed ``style="fill-opacity: var(--x, 0.5)"``
+    and similar CSS-only constructs. Scour 0.38.2 raises ``ValueError``
+    here; svg_polish leaves the property untouched and continues.
     """
 
     @pytest.mark.parametrize(
@@ -225,3 +224,102 @@ class TestNonNumericStyleValues:
         assert value in result
         # stroke-width is unparseable ⇒ stroke must NOT be stripped
         assert "stroke" in result
+
+
+# ---------------------------------------------------------------------------
+# Non-numeric values in transform / path / length attributes
+# ---------------------------------------------------------------------------
+
+
+class TestNonNumericTransformValues:
+    """``optimize_transforms`` must not crash on transforms holding CSS tokens.
+
+    Some toolchains emit ``transform="translate(var(--x), 0)"`` so the
+    parser sees an identifier where it expects a number. svg_polish leaves
+    the attribute untouched; scour 0.38.2 raises ``SyntaxError``.
+    """
+
+    @pytest.mark.parametrize(
+        "transform",
+        [
+            "translate(var(--x), 0)",
+            "rotate(calc(45deg))",
+            "scale(var(--scale, 1))",
+        ],
+    )
+    def test_transform_with_var_calc_does_not_crash(self, transform: str) -> None:
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+            f'<rect transform="{transform}" width="10" height="10" fill="red"/>'
+            "</svg>"
+        )
+        result = scour_string(svg)
+        assert transform in result, f"transform {transform!r} must be preserved verbatim"
+
+
+class TestNonNumericPathData:
+    """``clean_path`` must not crash on ``d`` attributes that aren't real paths.
+
+    Real SVGs sometimes carry placeholder or templated ``d`` data such as
+    ``"M 0 0 L var(--x) 10 Z"`` or ``"   "``. The parser raises
+    ``SyntaxError``/``IndexError``; the pass leaves the attribute untouched.
+    """
+
+    @pytest.mark.parametrize(
+        "d",
+        [
+            "M 0 0 L var(--x) 10 Z",
+            "M 0 0 L calc(10 + 5) 10 Z",
+        ],
+    )
+    def test_path_with_var_calc_does_not_crash(self, d: str) -> None:
+        svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><path d="{d}" fill="red"/></svg>'
+        result = scour_string(svg)
+        assert d in result, f"d={d!r} must be preserved verbatim"
+
+    @pytest.mark.parametrize("d", ["", "   ", "\t\n"])
+    def test_empty_or_whitespace_path_does_not_crash(self, d: str) -> None:
+        svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><path d="{d}" fill="red"/></svg>'
+        # Must not raise; empty d may be dropped, but no crash either way.
+        scour_string(svg)
+
+
+class TestScourLengthInvalid:
+    """``scour_length`` must return the input verbatim for non-length values.
+
+    ``SVGLength`` returns ``Unit.INVALID`` for tokens like ``"inherit"`` or
+    ``"var(--w)"``. Without the guard, ``scour_length`` would emit
+    ``"0INVALID"`` and corrupt the attribute downstream.
+    """
+
+    def test_scour_length_returns_input_for_var(self) -> None:
+        from svg_polish.passes.length import scour_length
+
+        assert scour_length("var(--w)") == "var(--w)"
+
+    def test_scour_length_returns_input_for_keyword(self) -> None:
+        from svg_polish.passes.length import scour_length
+
+        assert scour_length("inherit") == "inherit"
+
+    def test_scour_length_normalises_real_length(self) -> None:
+        from svg_polish.passes.length import scour_length
+
+        # Sanity: real lengths still round-trip through the optimiser.
+        assert scour_length("12.500px") == "12.5px"
+
+
+class TestSVGLengthSlowPathUnits:
+    """``SVGLength`` must always set ``units``, even when the unit token misses.
+
+    Inputs like ``"10e"`` parse the number but fail the unit regex; without
+    the fallback, ``units`` would be undefined and any ``length.units`` access
+    downstream would raise ``AttributeError``.
+    """
+
+    @pytest.mark.parametrize("value", ["10e", "5xyz", "0INVALID"])
+    def test_unparseable_unit_yields_invalid(self, value: str) -> None:
+        from svg_polish.types import SVGLength, Unit
+
+        parsed = SVGLength(value)
+        assert parsed.units == Unit.INVALID

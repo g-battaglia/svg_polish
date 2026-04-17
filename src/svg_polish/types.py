@@ -260,6 +260,12 @@ class SVGLength:
                 unitMatch = unit.search(length_str, unitBegin)
                 if unitMatch is not None:
                     self.units = Unit.get(unitMatch.group(0))
+                else:
+                    # number parsed but unit token didn't match (e.g. "10e",
+                    # "5xyz") — treat as invalid rather than leaving units
+                    # uninitialised, which would crash any downstream
+                    # ``length.units`` access. Scour 0.38.2 has this exact bug.
+                    self.units = Unit.INVALID
 
             # invalid
             else:

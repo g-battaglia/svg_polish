@@ -264,7 +264,13 @@ def optimize_transforms(element: Element, options: optparse.Values) -> int:
     for transformAttr in ["transform", "patternTransform", "gradientTransform"]:
         val = element.getAttribute(transformAttr)
         if val:
-            transform = svg_transform_parser.parse(val)
+            try:
+                transform = svg_transform_parser.parse(val)
+            except SyntaxError:
+                # Transform list contains tokens the SVG transform grammar
+                # rejects (CSS ``var(--x)``, ``calc(...)``, …). Leave the
+                # attribute untouched — scour 0.38.2 crashes here.
+                continue
 
             optimize_transform(transform)
 

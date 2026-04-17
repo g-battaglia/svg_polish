@@ -129,7 +129,17 @@ def clean_path(element: Element, options: optparse.Values, stats: ScourStats) ->
 
     # this gets the parser object from svg_regex.py
     oldPathStr = element.getAttribute("d")
-    path = svg_parser.parse(oldPathStr)
+    try:
+        path = svg_parser.parse(oldPathStr)
+    except (SyntaxError, IndexError):
+        # The ``d`` attribute is malformed or contains tokens the SVG path
+        # grammar rejects (CSS ``var(--x)``, …). Leave the attribute
+        # untouched — scour 0.38.2 crashes here.
+        return
+    if not path:
+        # Whitespace-only or empty ``d`` parses to ``[]``. The downstream
+        # code assumes at least one command (``path[0]``); bail out cleanly.
+        return
     style = _get_style(element)
 
     # This determines whether the stroke has round or square linecaps.  If it does, we do not want to collapse empty

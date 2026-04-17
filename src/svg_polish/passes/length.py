@@ -49,8 +49,15 @@ def scour_length(length: str) -> str:
     may carry a unit (``stroke-width="2.5px"``); for unit-stripped
     numerics, call :func:`scour_unitless_length` directly to avoid
     the parse cost.
+
+    Returns *length* unchanged when it isn't a real length value
+    (``var(--x)``, ``calc(...)``, ``inherit``, …): emitting
+    ``f"0INVALID"`` would corrupt the attribute and break later
+    passes — scour 0.38.2 does exactly this and crashes downstream.
     """
     parsed = SVGLength(length)
+    if parsed.units == Unit.INVALID:
+        return length
     return scour_unitless_length(parsed.value) + Unit.str(parsed.units)
 
 
