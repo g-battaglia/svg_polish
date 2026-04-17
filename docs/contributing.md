@@ -1,13 +1,13 @@
 # Contributing
 
-## Development Setup
+## Development setup
 
 ### Prerequisites
 
 - Python 3.10+
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+- [uv](https://docs.astral.sh/uv/) (recommended) or `pip`
 
-### Getting Started
+### Bootstrap
 
 ```bash
 git clone https://github.com/g-battaglia/svg_polish.git
@@ -15,74 +15,84 @@ cd svg_polish
 uv sync
 ```
 
-This installs all dependencies including dev tools (pytest, ruff, mypy, coverage).
+This installs runtime dependencies (`defusedxml`) plus the dev tooling
+(`pytest`, `pytest-benchmark`, `coverage`, `ruff`, `mypy`,
+`poethepoet`, optionally `lxml` if `[fast]` is selected).
 
-## Development Workflow
+## Workflow
 
-### Task Runner
-
-SVG Polish uses [Poe the Poet](https://poethepoet.naber.dev/) for common tasks:
+`svg_polish` uses [Poe the Poet](https://poethepoet.naber.dev/) for
+common tasks:
 
 ```bash
-# Run all tests
-uv run poe test
+uv run poe test          # full test suite
+uv run poe test-cov      # with HTML coverage report
+uv run poe lint          # ruff lint
+uv run poe format        # ruff format
+uv run poe typecheck     # mypy --strict
+uv run poe check         # all of the above
 
-# Run tests with coverage report
-uv run poe test-cov
-
-# Lint with ruff
-uv run poe lint
-
-# Format with ruff
-uv run poe format
-
-# Type check with mypy
-uv run poe typecheck
-
-# Run all checks (lint + typecheck + test)
-uv run poe check
+uv run poe bench         # save a performance baseline
+uv run poe bench-compare # compare current run vs baseline (5% tolerance)
 ```
 
-### Running Tests
+The check gate must be green for every PR:
+
+- `pytest` — 100 % line coverage required.
+- `mypy --strict` — zero errors.
+- `ruff check` and `ruff format --check` — clean.
+
+## Running tests
 
 ```bash
-# All tests
+# Full suite (excluding benchmarks)
 uv run pytest tests/
 
-# Specific test file
-uv run pytest tests/test_fixtures.py
+# A single file
+uv run pytest tests/test_security.py
 
-# Specific test class
-uv run pytest tests/test_fixtures.py::TestFixtureComplexScene
+# A single test
+uv run pytest tests/test_options.py::test_options_immutable
 
 # With coverage
 uv run pytest tests/ --cov=svg_polish --cov-report=term-missing
 
-# Verbose
-uv run pytest tests/ -v
+# Benchmarks (opt-in via marker)
+uv run pytest tests/benchmarks/ -m benchmark --benchmark-only
 ```
 
-### Test Organization
+The default `pytest` invocation excludes the `benchmark` marker — see
+`pyproject.toml` `[tool.pytest.ini_options]`.
+
+## Test suites
 
 ```
 tests/
-├── test_optimizer.py          # 261 tests from original Scour test suite
-├── test_public_api.py         # 19 tests for optimize(), optimize_file()
-├── test_css.py                # 3 tests for CSS parser
-├── test_parsers.py            # 32 tests for svg_regex.py and svg_transform.py
-├── test_coverage.py           # 93 tests for edge cases and branches
-├── test_remaining_coverage.py # 31 tests for final coverage gaps
-├── test_fixtures.py           # 30 tests using real SVG fixtures
-└── fixtures/                  # 150+ SVG test fixture files
+├── test_optimizer.py        # core optimisation behaviour
+├── test_public_api.py       # optimize, optimize_path, optimize_with_stats, …
+├── test_options.py          # OptimizeOptions validation, immutability, defaults
+├── test_exceptions.py       # SvgPolishError hierarchy, attributes
+├── test_security.py         # defusedxml posture, XXE / billion-laughs / oversize
+├── test_concurrency.py      # threaded optimisation, deterministic output
+├── test_float_engine.py     # decimal vs float engine isolation
+├── test_modern_api.py       # OptimizeResult / OptimizeOptions surface
+├── test_performance.py      # caching invariants
+├── test_robustness.py       # malformed inputs
+├── test_fixtures.py         # 150+ real-world SVG fixtures
+├── test_parsers.py          # svg_regex / svg_transform
+├── test_css.py              # css.py
+├── test_coverage.py         # edge-case branches
+├── benchmarks/
+│   ├── conftest.py          # session-scoped fixture generator
+│   └── test_perf.py         # pytest-benchmark suite
+└── fixtures/                # SVG inputs
 ```
 
-**Total: 469 tests, 100% coverage.**
+## Writing tests
 
-### Writing Tests
+### Fixture-driven
 
-#### Using real SVG fixtures
-
-Create an SVG file in `tests/fixtures/` and write tests against it:
+Drop an SVG into `tests/fixtures/` and assert against it:
 
 ```python
 from pathlib import Path
@@ -90,87 +100,81 @@ from svg_polish import optimize
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
-def test_my_feature():
+def test_my_feature() -> None:
     result = optimize((FIXTURES / "my-test.svg").read_text())
     assert "<rect" in result
 ```
 
-#### Using inline SVG strings
-
-For simple cases, pass SVG strings directly:
+### Inline SVG strings
 
 ```python
 from svg_polish import optimize
 
-def test_color_shortening():
-    result = optimize('<svg xmlns="http://www.w3.org/2000/svg">'
-                      '<rect fill="#ff0000" width="10" height="10"/></svg>')
+def test_color_shortening() -> None:
+    result = optimize(
+        '<svg xmlns="http://www.w3.org/2000/svg">'
+        '<rect fill="#ff0000" width="10" height="10"/></svg>'
+    )
     assert 'fill="red"' in result
 ```
 
-#### Testing with specific options
+### With `OptimizeOptions`
 
 ```python
-from svg_polish.optimizer import scourString, parse_args
+from svg_polish import optimize, OptimizeOptions
 
-def test_with_viewboxing():
-    options = parse_args(["--enable-viewboxing"])
-    result = scourString(svg_string, options)
-    assert "viewBox" in result
+def test_with_viewboxing() -> None:
+    opts = OptimizeOptions(enable_viewboxing=True)
+    assert "viewBox" in optimize(svg, opts)
 ```
 
-### SVG Fixture Guidelines
+## Fixture guidelines
 
-When creating test fixture SVGs:
+When adding test SVGs:
 
-1. **No `--` in comments** - XML forbids `--` inside `<!-- -->` comments
-2. **Keep fixtures small** - Focus on the specific feature being tested
-3. **Use descriptive filenames** - e.g., `gradient-dedup.svg`, `path-line-decompose-hv.svg`
-4. **Include a brief comment** - Explain what the fixture tests
+1. **No `--` in comments** — XML forbids `--` inside `<!-- -->`.
+2. **Keep fixtures small** — focus on the specific feature.
+3. **Use descriptive filenames** — `gradient-dedup.svg`,
+   `path-line-decompose-hv.svg`.
+4. **Add a brief comment** explaining what the fixture exercises.
+5. **No consumer-specific names** — fixtures describe a profile
+   (`dense-chart-100kb`), not an origin.
 
-### Linting
-
-SVG Polish uses [ruff](https://docs.astral.sh/ruff/) for linting and formatting:
+## Linting
 
 ```bash
-# Check for issues
 uv run ruff check .
-
-# Auto-fix issues
 uv run ruff check --fix .
-
-# Format code
 uv run ruff format .
 ```
 
-The legacy `optimizer.py` file has relaxed linting rules (see `pyproject.toml`).
+The legacy `optimizer.py` orchestrator has slightly relaxed rules
+(see `[tool.ruff.lint.per-file-ignores]` in `pyproject.toml`) because
+it owns the long pipeline `if`/`elif` chain.
 
-### Type Checking
+## Type checking
 
 ```bash
 uv run mypy src/svg_polish/
 ```
 
-SVG Polish ships with a `py.typed` marker for PEP 561 compliance.
+`mypy --strict` is mandatory. The package ships `py.typed` (PEP 561),
+so user code that imports from `svg_polish` is also fully type-checked.
 
-## Pull Request Guidelines
+## Pull request checklist
 
-1. All tests must pass (`uv run poe test`)
-2. Coverage must stay at 100% (`uv run poe test-cov`)
-3. No linting errors (`uv run poe lint`)
-4. Type checking must pass (`uv run poe typecheck`)
-5. Add tests for new functionality
-6. Update documentation if adding user-facing features
+1. `uv run poe check` is green.
+2. Coverage is still at 100 %.
+3. Benchmarks (`uv run poe bench-compare`) within 5 % of the saved
+   baseline, or the regression is documented and justified.
+4. Any new public symbol is exported from `svg_polish/__init__.py` and
+   documented in `docs/api.md`.
+5. New behaviour gets a test; new options get a `test_options.py`
+   validation case.
+6. `CHANGELOG.md` updated under the next-version heading.
 
-## Project History
+## Project history
 
-SVG Polish is a fork of [Scour](https://github.com/scour-project/scour), modernized for Python 3.10+. Key changes from the original:
-
-- Removed Python 2 compatibility (`six`, `from __future__` imports)
-- Modern packaging (`pyproject.toml`, `hatchling`, `uv`)
-- Type annotations throughout
-- 100% test coverage (up from ~70% in Scour)
-- Clean public API (`optimize()`, `optimize_file()`)
-- `pytest` instead of `unittest` runner
-
-See [CHANGELOG.md](../CHANGELOG.md) for release notes.
+See [`README.md`](../README.md) and [`CHANGELOG.md`](../CHANGELOG.md)
+for the v1.0 release notes and Scour heritage. The architectural
+rebuild is documented in [`docs/architecture.md`](architecture.md).

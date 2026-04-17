@@ -29,6 +29,9 @@ coverage.xml
 # Hypothesis (property-based test database)
 .hypothesis/
 
+# pytest-benchmark output (saved baselines kept locally, not committed)
+.benchmarks/
+
 # Local agent / loop tooling
 .ralph/
 .opencode/

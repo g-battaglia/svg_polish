@@ -17,7 +17,7 @@ from hypothesis.strategies import (
     text,
 )
 
-from svg_polish.optimizer import convertColor, scourString
+from svg_polish.optimizer import convert_color, scour_string
 
 # ---------------------------------------------------------------------------
 # Color conversion strategies
@@ -27,7 +27,7 @@ HEX_CHARS = "0123456789abcdefABCDEF"
 
 
 class TestConvertColorProperties:
-    """Property: convertColor should be idempotent for hex colors."""
+    """Property: convert_color should be idempotent for hex colors."""
 
     @given(
         r=integers(min_value=0, max_value=255),
@@ -38,9 +38,9 @@ class TestConvertColorProperties:
     def test_hex_color_idempotent(self, r: int, g: int, b: int) -> None:
         """Converting a hex color twice must produce the same result."""
         hex_color = f"#{r:02x}{g:02x}{b:02x}"
-        first = convertColor(hex_color)
-        second = convertColor(first)
-        assert first == second, f"convertColor({hex_color!r}) → {first!r} → {second!r}"
+        first = convert_color(hex_color)
+        second = convert_color(first)
+        assert first == second, f"convert_color({hex_color!r}) → {first!r} → {second!r}"
 
     @given(
         r=integers(min_value=0, max_value=255),
@@ -51,8 +51,8 @@ class TestConvertColorProperties:
     def test_rgb_color_produces_hex(self, r: int, g: int, b: int) -> None:
         """rgb() input must produce a valid hex color output."""
         rgb_color = f"rgb({r}, {g}, {b})"
-        result = convertColor(rgb_color)
-        assert result.startswith("#"), f"convertColor({rgb_color!r}) = {result!r}"
+        result = convert_color(rgb_color)
+        assert result.startswith("#"), f"convert_color({rgb_color!r}) = {result!r}"
         # Must be valid hex: #rgb (3) or #rrggbb (7)
         assert len(result) in (4, 7)
 
@@ -81,7 +81,7 @@ COLOR_NAMES = [
 
 
 class TestSvgOutputValidity:
-    """Property: scourString output must be valid XML."""
+    """Property: scour_string output must be valid XML."""
 
     @given(
         fill=sampled_from(COLOR_NAMES),
@@ -92,7 +92,7 @@ class TestSvgOutputValidity:
     def test_simple_rect_produces_valid_xml(self, fill: str, width: int, height: int) -> None:
         """Optimizing a simple <rect> SVG should produce valid XML."""
         svg = f'<svg xmlns="http://www.w3.org/2000/svg"><rect fill="{fill}" width="{width}" height="{height}"/></svg>'
-        result = scourString(svg)
+        result = scour_string(svg)
         # Must be parseable XML
         parsed = ET.fromstring(result)
         assert parsed.tag.endswith("svg")
@@ -105,7 +105,7 @@ class TestSvgOutputValidity:
         """Optimizing SVG with multiple rects should produce valid XML."""
         rects = "".join(f'<rect fill="red" x="{i * 10}" width="10" height="10"/>' for i in range(num_rects))
         svg = f'<svg xmlns="http://www.w3.org/2000/svg">{rects}</svg>'
-        result = scourString(svg)
+        result = scour_string(svg)
         parsed = ET.fromstring(result)
         assert parsed.tag.endswith("svg")
 
@@ -121,7 +121,7 @@ class TestSvgOutputValidity:
         """Optimizing SVG with random path data should produce valid XML or raise."""
         svg = f'<svg xmlns="http://www.w3.org/2000/svg"><path d="{path_data}"/></svg>'
         try:
-            result = scourString(svg)
+            result = scour_string(svg)
             parsed = ET.fromstring(result)
             assert parsed.tag.endswith("svg")
         except Exception:
@@ -152,7 +152,7 @@ class TestPathOptimization:
         points = " ".join(f"L{x},{y}" for x, y in zip(coords[::2], coords[1::2], strict=False))
         path_d = f"M0,0 {points}"
         svg = f'<svg xmlns="http://www.w3.org/2000/svg"><path d="{path_d}"/></svg>'
-        result = scourString(svg)
+        result = scour_string(svg)
         # Output must be valid XML
         parsed = ET.fromstring(result)
         assert parsed.tag.endswith("svg")

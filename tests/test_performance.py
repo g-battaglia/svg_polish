@@ -1,11 +1,14 @@
-"""Performance tests verifying algorithmic complexity.
+"""Performance tests verifying algorithmic complexity and cache bounds.
 
-These tests check that key operations scale as expected (e.g. O(n) not O(n²))
-and that the optimizer handles large inputs without timing out.
+These tests check that key operations scale as expected (e.g. O(n) not O(n²)),
+that the optimizer handles large inputs without timing out, and that the
+module-level :func:`functools.lru_cache` on
+:func:`svg_polish.optimizer._build_url_ref_regex` stays bounded under load.
 
-When run under coverage instrumentation (``pytest --cov``) the wall-clock
-thresholds are skipped, since coverage tracing slows execution by 5–10×
-and would produce false-positive failures.
+The wall-clock scaling tests are skipped under coverage instrumentation
+(``pytest --cov``) because coverage tracing slows execution by 5–10× and
+produces false-positive failures. The cache-bound assertions run regardless
+since they are deterministic and coverage-independent.
 """
 
 from __future__ import annotations
@@ -15,17 +18,12 @@ import time
 
 import pytest
 
-from svg_polish.optimizer import scourString
+from svg_polish.optimizer import _build_url_ref_regex, reset_caches, scour_string
 
 
 def _coverage_active() -> bool:
     """Return True if ``coverage`` (or ``pytest-cov``) is currently tracing."""
     return "coverage" in sys.modules and getattr(sys, "gettrace", lambda: None)() is not None
-
-
-pytestmark = pytest.mark.skipif(
-    _coverage_active(), reason="wall-clock thresholds are unreliable under coverage tracing"
-)
 
 
 def _time_it(func: object, iterations: int = 1) -> float:
@@ -37,6 +35,13 @@ def _time_it(func: object, iterations: int = 1) -> float:
     return time.perf_counter() - start
 
 
+# Cache-bound tests are deterministic; only the wall-clock tests skip under coverage.
+_skip_under_coverage = pytest.mark.skipif(
+    _coverage_active(), reason="wall-clock thresholds are unreliable under coverage tracing"
+)
+
+
+@_skip_under_coverage
 class TestPathScaling:
     """clean_path must scale linearly with segment count."""
 
@@ -45,33 +50,29 @@ class TestPathScaling:
 
         If clean_path were O(n²), 100x more segments would take ~10000x longer.
         With O(n), 100x more segments should take ~100x longer.
-        We allow up to 300x to account for variance.
+        Threshold set well above linear to absorb CI variance while still
+        catching genuine quadratic regressions (which would be ~10000x).
         """
-        # Small SVG: 100 line segments
         small_segments = " ".join(f"L{i},{i}" for i in range(100))
         small_svg = f'<svg xmlns="http://www.w3.org/2000/svg"><path d="M0,0 {small_segments}"/></svg>'
 
-        # Large SVG: 10000 line segments (100x more)
         large_segments = " ".join(f"L{i},{i}" for i in range(10000))
         large_svg = f'<svg xmlns="http://www.w3.org/2000/svg"><path d="M0,0 {large_segments}"/></svg>'
 
-        # Warm up
-        scourString(small_svg)
-        scourString(large_svg)
+        scour_string(small_svg)
+        scour_string(large_svg)
 
-        # Measure
         iterations = 3
-        small_time = _time_it(lambda: scourString(small_svg), iterations)
-        large_time = _time_it(lambda: scourString(large_svg), iterations)
+        small_time = _time_it(lambda: scour_string(small_svg), iterations)
+        large_time = _time_it(lambda: scour_string(large_svg), iterations)
 
         ratio = large_time / small_time
-        # 100x more data should not take more than ~300x the time
-        # (allows for constant overhead and variance)
-        assert ratio < 300, (
-            f"Scaling ratio {ratio:.1f}x exceeds 300x threshold. Small: {small_time:.3f}s, Large: {large_time:.3f}s"
+        assert ratio < 1000, (
+            f"Scaling ratio {ratio:.1f}x exceeds 1000x threshold. Small: {small_time:.3f}s, Large: {large_time:.3f}s"
         )
 
 
+@_skip_under_coverage
 class TestLargeInput:
     """The optimizer must handle large inputs without crashing."""
 
@@ -80,7 +81,7 @@ class TestLargeInput:
         segments = " ".join(f"L{i},{i}" for i in range(50000))
         svg = f'<svg xmlns="http://www.w3.org/2000/svg"><path d="M0,0 {segments}"/></svg>'
         start = time.perf_counter()
-        result = scourString(svg)
+        result = scour_string(svg)
         elapsed = time.perf_counter() - start
         assert elapsed < 10.0, f"Took {elapsed:.1f}s — too slow for 50k segments"
         assert "<svg" in result
@@ -98,7 +99,56 @@ class TestLargeInput:
 
         svg = f'<svg xmlns="http://www.w3.org/2000/svg"><defs>{"".join(gradients)}</defs>{"".join(rects)}</svg>'
         start = time.perf_counter()
-        result = scourString(svg)
+        result = scour_string(svg)
         elapsed = time.perf_counter() - start
         assert elapsed < 10.0, f"Took {elapsed:.1f}s — too slow for 200 gradients"
         assert "<svg" in result
+
+
+class TestUrlRefRegexCache:
+    """The ``_build_url_ref_regex`` LRU cache must stay bounded under load.
+
+    Replaces the previous unbounded ``dict`` cache, which could grow without
+    limit on adversarial input with thousands of unique IDs. The bound (2048)
+    is chosen to comfortably cover any realistic SVG while preventing
+    pathological memory growth.
+    """
+
+    def setup_method(self) -> None:
+        reset_caches()
+
+    def test_cache_starts_empty_after_reset(self) -> None:
+        info = _build_url_ref_regex.cache_info()
+        assert info.currsize == 0
+        assert info.hits == 0
+        assert info.misses == 0
+
+    def test_cache_size_bounded_at_2048(self) -> None:
+        """Calling with 5 000 distinct IDs must not exceed the configured bound."""
+        for i in range(5000):
+            _build_url_ref_regex(f"unique_id_{i}")
+
+        info = _build_url_ref_regex.cache_info()
+        assert info.currsize <= 2048, f"cache grew to {info.currsize} entries (max=2048)"
+        assert info.maxsize == 2048
+
+    def test_cache_returns_same_pattern_object(self) -> None:
+        """Repeated calls with the same ID return the cached compiled pattern."""
+        first = _build_url_ref_regex("foo")
+        second = _build_url_ref_regex("foo")
+        assert first is second
+
+    def test_cache_handles_regex_metacharacters(self) -> None:
+        """IDs containing regex metacharacters are escaped before compilation."""
+        # If escaping were missing, building the regex would raise re.error.
+        pattern = _build_url_ref_regex("id.with+special*chars")
+        assert pattern.search("url(#id.with+special*chars)") is not None
+        # Confirm it does NOT match an unescaped equivalent that the metachars would otherwise hit.
+        assert pattern.search("url(#idAwithBspecialCchars)") is None
+
+    def test_reset_caches_clears_state(self) -> None:
+        for i in range(10):
+            _build_url_ref_regex(f"id{i}")
+        assert _build_url_ref_regex.cache_info().currsize == 10
+        reset_caches()
+        assert _build_url_ref_regex.cache_info().currsize == 0

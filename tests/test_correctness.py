@@ -10,25 +10,25 @@ from decimal import Decimal
 
 from svg_polish.constants import _name_to_hex
 from svg_polish.optimizer import (
-    convertColor,
-    optimizeTransform,
-    scourString,
+    convert_color,
+    optimize_transform,
+    scour_string,
 )
 from svg_polish.svg_transform import svg_transform_parser
 
 # ---------------------------------------------------------------------------
-# convertColor — named CSS colors
+# convert_color — named CSS colors
 # ---------------------------------------------------------------------------
 
 
 class TestConvertColorNamedColors:
-    """convertColor must resolve all 148 named CSS colors to hex."""
+    """convert_color must resolve all 148 named CSS colors to hex."""
 
     def test_convert_color_all_named_colors(self) -> None:
-        """Verify convertColor works for every entry in _name_to_hex."""
+        """Verify convert_color works for every entry in _name_to_hex."""
         for name, expected_hex in _name_to_hex.items():
-            result = convertColor(name)
-            assert result == expected_hex, f"convertColor({name!r}) = {result!r}, expected {expected_hex!r}"
+            result = convert_color(name)
+            assert result == expected_hex, f"convert_color({name!r}) = {result!r}, expected {expected_hex!r}"
 
     def test_convert_color_count(self) -> None:
         """There should be exactly 147 named CSS colors."""
@@ -36,15 +36,15 @@ class TestConvertColorNamedColors:
 
 
 # ---------------------------------------------------------------------------
-# convertColor — hex input
+# convert_color — hex input
 # ---------------------------------------------------------------------------
 
 
 class TestConvertColorHex:
-    """convertColor hex handling and idempotency."""
+    """convert_color hex handling and idempotency."""
 
     def test_convert_color_hex_roundtrip(self) -> None:
-        """Hex colors are idempotent: applying convertColor twice yields the same result."""
+        """Hex colors are idempotent: applying convert_color twice yields the same result."""
         hex_colors = [
             "#ff0000",
             "#00ff00",
@@ -56,66 +56,66 @@ class TestConvertColorHex:
             "#ffffff",
         ]
         for hex_color in hex_colors:
-            first = convertColor(hex_color)
-            second = convertColor(first)
+            first = convert_color(hex_color)
+            second = convert_color(first)
             assert first == second, (
-                f"convertColor({hex_color!r}) = {first!r}, convertColor({first!r}) = {second!r} — not idempotent"
+                f"convert_color({hex_color!r}) = {first!r}, convert_color({first!r}) = {second!r} — not idempotent"
             )
 
     def test_convert_color_hex_shortening(self) -> None:
         """#rrggbb where rr==gg==bb should be shortened to #rgb."""
-        assert convertColor("#ff0000") == "#f00"
-        assert convertColor("#00ff00") == "#0f0"
-        assert convertColor("#0000ff") == "#00f"
-        assert convertColor("#ffffff") == "#fff"
-        assert convertColor("#000000") == "#000"
+        assert convert_color("#ff0000") == "#f00"
+        assert convert_color("#00ff00") == "#0f0"
+        assert convert_color("#0000ff") == "#00f"
+        assert convert_color("#ffffff") == "#fff"
+        assert convert_color("#000000") == "#000"
 
     def test_convert_color_hex_no_shortening(self) -> None:
         """Hex colors without repeating pairs should stay 6-digit."""
-        result = convertColor("#aabbcc")
+        result = convert_color("#aabbcc")
         assert result == "#abc"
-        result = convertColor("#123456")
+        result = convert_color("#123456")
         assert result == "#123456"
 
 
 # ---------------------------------------------------------------------------
-# convertColor — rgb() input
+# convert_color — rgb() input
 # ---------------------------------------------------------------------------
 
 
 class TestConvertColorRgb:
-    """convertColor rgb() and rgb()% parsing."""
+    """convert_color rgb() and rgb()% parsing."""
 
     def test_convert_color_rgb_to_hex(self) -> None:
         """rgb(R, G, B) integer form should convert to hex."""
-        assert convertColor("rgb(255, 0, 0)") == "#f00"
-        assert convertColor("rgb(0, 255, 0)") == "#0f0"
-        assert convertColor("rgb(0, 0, 255)") == "#00f"
-        assert convertColor("rgb(255, 255, 255)") == "#fff"
+        assert convert_color("rgb(255, 0, 0)") == "#f00"
+        assert convert_color("rgb(0, 255, 0)") == "#0f0"
+        assert convert_color("rgb(0, 0, 255)") == "#00f"
+        assert convert_color("rgb(255, 255, 255)") == "#fff"
 
     def test_convert_color_rgb_percent_to_hex(self) -> None:
         """rgb(R%, G%, B%) percentage form should convert to hex."""
-        assert convertColor("rgb(100%, 0%, 0%)") == "#f00"
-        assert convertColor("rgb(0%, 100%, 0%)") == "#0f0"
-        assert convertColor("rgb(0%, 0%, 100%)") == "#00f"
-        assert convertColor("rgb(100%, 100%, 100%)") == "#fff"
+        assert convert_color("rgb(100%, 0%, 0%)") == "#f00"
+        assert convert_color("rgb(0%, 100%, 0%)") == "#0f0"
+        assert convert_color("rgb(0%, 0%, 100%)") == "#00f"
+        assert convert_color("rgb(100%, 100%, 100%)") == "#fff"
         # 50% should map to ~128 (0x80)
-        result = convertColor("rgb(50%, 50%, 50%)")
+        result = convert_color("rgb(50%, 50%, 50%)")
         assert result.startswith("#")
 
 
 # ---------------------------------------------------------------------------
-# optimizeTransform — identity / no-op transforms
+# optimize_transform — identity / no-op transforms
 # ---------------------------------------------------------------------------
 
 
 class TestOptimizeTransformIdentity:
-    """optimizeTransform must remove identity / no-op transforms."""
+    """optimize_transform must remove identity / no-op transforms."""
 
     def _optimize(self, transform_str: str) -> list[tuple[str, list[Decimal]]]:
         """Helper: parse a transform string and optimize it in-place."""
         parsed = svg_transform_parser.parse(transform_str)
-        optimizeTransform(parsed)
+        optimize_transform(parsed)
         return parsed
 
     def test_optimize_transform_identity(self) -> None:
@@ -126,7 +126,7 @@ class TestOptimizeTransformIdentity:
     def test_optimize_transform_translate_zero(self) -> None:
         """translate(0,0) collapses to translate(0) (drops optional Y=0)."""
         result = self._optimize("translate(0,0)")
-        # optimizeTransform drops the optional second arg (Y=0) but keeps the translate
+        # optimize_transform drops the optional second arg (Y=0) but keeps the translate
         assert len(result) == 1
         assert result[0][0] == "translate"
         assert result[0][1] == [Decimal("0")]
@@ -164,19 +164,19 @@ class TestOptimizeTransformIdentity:
         assert result == []
 
     def test_optimize_transform_matrix_nonidentity_kept(self) -> None:
-        """A non-identity matrix should be preserved by optimizeTransform."""
+        """A non-identity matrix should be preserved by optimize_transform."""
         result = self._optimize("matrix(2,0,0,2,10,20)")
         assert len(result) == 1
         assert result[0][0] in ("matrix", "translate", "scale")
 
 
 # ---------------------------------------------------------------------------
-# serializeXML — indentation variants
+# serialize_xml — indentation variants
 # ---------------------------------------------------------------------------
 
 
 class TestSerializeXMLIndentation:
-    """serializeXML must respect each indentation flag combination."""
+    """serialize_xml must respect each indentation flag combination."""
 
     SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\"><g><rect fill='red' width='10' height='10'/></g></svg>"
 
@@ -184,7 +184,7 @@ class TestSerializeXMLIndentation:
         """Default indentation uses a single space character per level."""
         from svg_polish.optimizer import parse_args
 
-        result = scourString(self.SVG, parse_args([]))
+        result = scour_string(self.SVG, parse_args([]))
         # Default indent_type is "space"; the inner <rect> sits one level in.
         assert "\n <rect" in result
 
@@ -192,7 +192,7 @@ class TestSerializeXMLIndentation:
         """--indent=tab uses tab characters."""
         from svg_polish.optimizer import parse_args
 
-        result = scourString(self.SVG, parse_args(["--indent=tab"]))
+        result = scour_string(self.SVG, parse_args(["--indent=tab"]))
         # The inner <rect> sits one level in (the empty <g> is collapsed).
         assert "\n\t<rect" in result
 
@@ -200,7 +200,7 @@ class TestSerializeXMLIndentation:
         """--indent=none disables indentation entirely."""
         from svg_polish.optimizer import parse_args
 
-        result = scourString(self.SVG, parse_args(["--indent=none"]))
+        result = scour_string(self.SVG, parse_args(["--indent=none"]))
         # No leading whitespace before nested elements
         assert "\n  <rect" not in result
         assert "\n\t<rect" not in result
@@ -210,7 +210,7 @@ class TestSerializeXMLIndentation:
         """--no-line-breaks collapses the SVG body into a single line."""
         from svg_polish.optimizer import parse_args
 
-        result = scourString(self.SVG, parse_args(["--no-line-breaks"]))
+        result = scour_string(self.SVG, parse_args(["--no-line-breaks"]))
         body_start = result.find("<svg")
         body_end = result.rfind("</svg>") + len("</svg>")
         assert "\n" not in result[body_start:body_end]
@@ -233,6 +233,6 @@ class TestRoundtrip:
             'width="30.000" height="40.000"/>'
             "</svg>"
         )
-        first = scourString(svg)
-        second = scourString(first)
+        first = scour_string(svg)
+        second = scour_string(first)
         assert second == first

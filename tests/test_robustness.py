@@ -6,11 +6,10 @@ gracefully — either optimizing successfully or raising meaningful errors.
 
 from __future__ import annotations
 
-import xml.parsers.expat
-
 import pytest
 
-from svg_polish.optimizer import scourString
+from svg_polish.exceptions import SvgParseError
+from svg_polish.optimizer import scour_string
 
 # ---------------------------------------------------------------------------
 # Minimal / degenerate SVGs
@@ -22,18 +21,18 @@ class TestEmptyAndWhitespace:
 
     def test_empty_svg(self) -> None:
         """<svg></svg> should not crash."""
-        result = scourString("<svg></svg>")
+        result = scour_string("<svg></svg>")
         assert "<svg" in result
 
     def test_svg_only_whitespace(self) -> None:
         """SVG with only whitespace text content should not crash."""
-        result = scourString("<svg>   </svg>")
+        result = scour_string("<svg>   </svg>")
         assert "<svg" in result
 
     def test_svg_with_xml_prolog(self) -> None:
         """SVG with XML prolog should parse and output correctly."""
         svg = '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"></svg>'
-        result = scourString(svg)
+        result = scour_string(svg)
         assert "<svg" in result
 
 
@@ -48,8 +47,11 @@ class TestMalformedSVG:
     def test_malformed_svg_unclosed_tag(self) -> None:
         """Unclosed tag should raise an appropriate error."""
         svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="red"'
-        with pytest.raises(xml.parsers.expat.ExpatError):
-            scourString(svg)
+        with pytest.raises(SvgParseError) as excinfo:
+            scour_string(svg)
+        # SvgParseError carries source-location data when the parser exposes it.
+        assert excinfo.value.line is not None
+        assert excinfo.value.column is not None
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +70,7 @@ class TestPreservedElements:
             "<rect fill='red' width='10' height='10'/>"
             "</svg>"
         )
-        result = scourString(svg)
+        result = scour_string(svg)
         assert "<script" in result
         assert "alert" in result
 
@@ -80,7 +82,7 @@ class TestPreservedElements:
             "<rect class='red' width='10' height='10'/>"
             "</svg>"
         )
-        result = scourString(svg)
+        result = scour_string(svg)
         assert "<style" in result
         assert "fill" in result
 
@@ -96,7 +98,7 @@ class TestUnusualContent:
     def test_svg_with_unicode_id(self) -> None:
         """SVG with unicode characters in id should not crash."""
         svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect id="ünïcödé-╳" fill="red" width="10" height="10"/></svg>'
-        result = scourString(svg)
+        result = scour_string(svg)
         assert "<svg" in result
 
 
@@ -112,7 +114,7 @@ class TestStressInputs:
         """SVG with 1000 line segments should optimize without crashing."""
         segments = " ".join(f"L{i},{i}" for i in range(1000))
         svg = f'<svg xmlns="http://www.w3.org/2000/svg"><path d="M0,0 {segments}"/></svg>'
-        result = scourString(svg)
+        result = scour_string(svg)
         assert "<svg" in result
         assert "<path" in result
 
@@ -131,7 +133,7 @@ class TestStressInputs:
             '<rect fill="url(#g1)" width="100" height="100"/>'
             "</svg>"
         )
-        result = scourString(svg)
+        result = scour_string(svg)
         assert "<svg" in result
         # Gradient should still be present (it's referenced)
         assert "linearGradient" in result or "g1" in result
@@ -142,7 +144,7 @@ class TestStressInputs:
         svg = f'<svg xmlns="http://www.w3.org/2000/svg"><path d="M0,0 {segments}"/></svg>'
         # Sanity check the input is actually >1 MB
         assert len(svg) > 1_048_576
-        result = scourString(svg)
+        result = scour_string(svg)
         assert "<svg" in result
         assert "<path" in result
 
@@ -151,6 +153,6 @@ class TestStressInputs:
         inner = '<rect fill="red" width="10" height="10"/>'
         nested = "<g>" * 50 + inner + "</g>" * 50
         svg = f'<svg xmlns="http://www.w3.org/2000/svg">{nested}</svg>'
-        result = scourString(svg)
+        result = scour_string(svg)
         assert "<svg" in result
         assert "<rect" in result

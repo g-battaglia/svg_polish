@@ -1,8 +1,8 @@
 # SVG Polish
 
-**A fast, lossless SVG optimizer for Python.**
+**A fast, lossless, type-safe SVG optimizer for Python.**
 
-SVG Polish removes unnecessary data from SVG files — editor metadata, redundant attributes, verbose color formats, unoptimized paths — producing clean, lightweight vector graphics that render identically to the originals.
+`svg_polish` shrinks SVG files — strips editor metadata, collapses redundant attributes, dedups gradients, optimises path data and transforms — while guaranteeing that the output renders identically to the input. The library is fully typed (`py.typed`), thread-safe, secure-by-default against XML attacks, and ships with a single short API: `optimize()`.
 
 [![PyPI](https://img.shields.io/pypi/v/svg-polish.svg)](https://pypi.org/project/svg-polish/)
 [![Python](https://img.shields.io/pypi/pyversions/svg-polish.svg)](https://pypi.org/project/svg-polish/)
@@ -11,18 +11,17 @@ SVG Polish removes unnecessary data from SVG files — editor metadata, redundan
 
 ---
 
-## Why SVG Polish?
-
-Most SVG editors (Inkscape, Illustrator, Figma, Sketch) embed metadata, default attributes, and editor-specific namespaces that bloat file sizes without affecting rendering. SVG Polish strips all of that away.
+## Why SVG Polish
 
 | Before | After |
 |--------|-------|
 | `style="fill:#ff0000;stroke:#000000"` | `fill="#f00"` |
-| Editor namespaces (Inkscape, Adobe, Sodipodi) | Removed |
-| Redundant XML declarations | Cleaned |
-| Verbose path data | Optimized |
+| Inkscape / Sketch / Adobe namespaces | Removed |
+| Verbose path commands | Collapsed and rounded |
+| Duplicate gradients | Deduplicated |
+| Hostile XXE / billion-laughs payload | Rejected before parsing |
 
-## Installation
+## Install
 
 Requires **Python 3.10+**.
 
@@ -30,29 +29,63 @@ Requires **Python 3.10+**.
 pip install svg-polish
 ```
 
-Or with [uv](https://docs.astral.sh/uv/):
+The default install is pure Python and depends only on `defusedxml`. For the optional fast XML backend (`lxml`, ~3-5× faster on large files):
 
 ```bash
-uv add svg-polish
+pip install "svg-polish[fast]"
 ```
 
-## Quick Start
+## Quick start
 
-### Command Line
+### Python
 
-Optimize a single file:
+```python
+from svg_polish import optimize
+
+optimized = optimize('<svg xmlns="http://www.w3.org/2000/svg">…</svg>')
+```
+
+That's the whole pitch. Pass `OptimizeOptions` for tuning:
+
+```python
+from svg_polish import optimize, OptimizeOptions
+
+opts = OptimizeOptions(
+    digits=3,
+    shorten_ids=True,
+    enable_viewboxing=True,
+    strip_comments=True,
+)
+optimized = optimize(svg, opts)
+```
+
+For metrics, use `optimize_with_stats`:
+
+```python
+from svg_polish import optimize_with_stats
+
+result = optimize_with_stats(svg)
+print(f"saved {result.saved_bytes} B ({result.saved_ratio:.1%}) in {result.duration_ms:.1f} ms")
+```
+
+For async web frameworks:
+
+```python
+from svg_polish import optimize_async
+
+async def handler(svg: str) -> str:
+    return await optimize_async(svg)
+```
+
+### Command line
 
 ```bash
 svg-polish -i input.svg -o output.svg
-```
-
-Read from stdin, write to stdout (great for piping):
-
-```bash
 cat input.svg | svg-polish > output.svg
+svg-polish -i input.svg -o output.svgz       # gzip-compressed output
 ```
 
-Maximum optimization:
+Aggressive settings:
 
 ```bash
 svg-polish -i input.svg -o output.svg \
@@ -63,160 +96,83 @@ svg-polish -i input.svg -o output.svg \
   --indent=none
 ```
 
-Output as compressed SVGZ:
+Run `svg-polish --help` for the full flag list.
 
-```bash
-svg-polish -i input.svg -o output.svgz
-```
+## Public API
 
-### Python API
+| Symbol | Purpose |
+|--------|---------|
+| `optimize(svg, options=None)` | Canonical entry point. Alias of `optimize_string`. |
+| `optimize_string(svg, options=None)` | `str`/`bytes` in, `str` out. |
+| `optimize_bytes(svg, options=None)` | `bytes` in, UTF-8 `bytes` out. |
+| `optimize_path(path, options=None)` | Read from a filesystem path. |
+| `optimize_async(svg, options=None)` | `await`-able wrapper via `asyncio.to_thread`. |
+| `optimize_with_stats(svg, options=None)` | Returns an `OptimizeResult` with metrics. |
+| `OptimizeOptions` | Frozen dataclass — the only configuration shape. |
+| `OptimizeResult` | Optimised SVG + stats + duration. |
+| `ScourStats` | Per-pass counters. |
 
-```python
-from svg_polish import optimize, optimize_file
+Exceptions: `SvgPolishError` (base) → `SvgParseError`, `SvgPathSyntaxError`, `SvgTransformSyntaxError`, `SvgOptimizeError`, `SvgSecurityError`, `InvalidOptionError`. See [`docs/api.md`](docs/api.md) for the full reference.
 
-# Optimize a string
-svg_input = open("input.svg").read()
-svg_output = optimize(svg_input)
+## What it does
 
-# Optimize a file directly
-svg_output = optimize_file("input.svg")
+- Removes editor metadata (Inkscape, Sodipodi, Illustrator, Sketch).
+- Strips default attribute values and empty attributes.
+- Converts colors to the shortest equivalent form.
+- Deduplicates `<linearGradient>` / `<radialGradient>` definitions.
+- Collapses `<g>` wrappers and merges sibling groups.
+- Optimises `<path>` `d` data (relative coords, h/v/s shortcuts, segment merging).
+- Optimises `transform`, `patternTransform`, `gradientTransform`.
+- Reduces numeric precision to a configurable digit count.
+- Optionally shortens IDs, strips comments, converts to viewBox, embeds rasters.
+- Custom serialiser produces tight, deterministic output.
 
-# Write the result
-with open("output.svg", "w") as f:
-    f.write(svg_output)
-```
+All passes are **lossless** by default — see [`docs/performance.md`](docs/performance.md) for the opt-in `decimal_engine="float"` mode that trades reproducibility for ~3-5× faster numeric arithmetic.
 
-### Advanced Usage
+## Security
 
-For fine-grained control, use the optimizer module directly:
+Inputs are parsed through `defusedxml`, so XML external entity attacks, billion-laughs, and external DTD fetches are rejected before they touch the optimiser. Inputs over 100 MB are refused by default. See [`SECURITY.md`](SECURITY.md) for the threat model and [`docs/security.md`](docs/security.md) for usage patterns.
 
-```python
-from svg_polish.optimizer import scourString, parse_args
+## Documentation
 
-# Configure specific options
-options = parse_args([
-    "--enable-viewboxing",
-    "--enable-id-stripping",
-    "--enable-comment-stripping",
-    "--shorten-ids",
-    "--set-precision=5",
-    "--indent=none",
-])
-
-result = scourString(svg_input, options)
-```
-
-## What It Does
-
-SVG Polish applies a comprehensive set of optimizations:
-
-- **Removes editor metadata** — Inkscape, Sodipodi, Adobe Illustrator, Sketch namespaces and elements
-- **Strips unnecessary attributes** — default values, empty attributes, redundant declarations
-- **Optimizes colors** — converts `rgb(255,0,0)` to `#f00`, uses short color names where smaller
-- **Optimizes path data** — removes unnecessary whitespace, converts absolute to relative coordinates, collapses segments
-- **Removes unused definitions** — gradients, patterns, and filters that nothing references
-- **Collapses groups** — removes pointless `<g>` wrappers
-- **Shortens IDs** — optionally replaces long IDs with minimal ones
-- **Removes comments** — optionally strips XML comments
-- **Creates viewBox** — optionally adds `viewBox` and removes `width`/`height`
-- **Embeds rasters** — converts referenced raster images to inline base64
-- **Optimizes transforms** — simplifies transformation matrices
-- **Reduces precision** — configurable decimal precision for coordinates
-
-All optimizations are **lossless by default** — the output renders identically to the input.
-
-## CLI Options
-
-Run `svg-polish --help` for the full list. Key options:
-
-| Option | Description |
-|--------|-------------|
-| `-i FILE` | Input SVG file (or use stdin) |
-| `-o FILE` | Output SVG file (or use stdout) |
-| `--set-precision=N` | Number of significant digits (default: 5) |
-| `--enable-viewboxing` | Add viewBox, remove width/height |
-| `--enable-id-stripping` | Remove unreferenced IDs |
-| `--enable-comment-stripping` | Remove XML comments |
-| `--shorten-ids` | Replace IDs with shorter versions |
-| `--indent=TYPE` | Indentation: `space`, `tab`, or `none` |
-| `--no-line-breaks` | Remove line breaks |
-| `--strip-xml-prolog` | Remove XML declaration |
-| `--disable-embed-rasters` | Keep raster images as external references |
-| `--keep-editor-data` | Preserve editor-specific metadata |
-| `--keep-unreferenced-defs` | Don't remove unused definitions |
-| `-q` / `--quiet` | Suppress status output |
-| `-v` / `--verbose` | Show detailed optimization statistics |
+- [`docs/api.md`](docs/api.md) — Python API reference.
+- [`docs/architecture.md`](docs/architecture.md) — module layout, layering, pipeline.
+- [`docs/performance.md`](docs/performance.md) — tuning guide and benchmarks.
+- [`docs/security.md`](docs/security.md) — usage patterns for untrusted input.
+- [`docs/cli.md`](docs/cli.md) — command-line reference.
+- [`docs/configuration.md`](docs/configuration.md) — `OptimizeOptions` field-by-field.
 
 ## Development
 
-SVG Polish uses [uv](https://docs.astral.sh/uv/) for dependency management and [Poe the Poet](https://poethepoet.naber.dev/) for task running.
-
 ```bash
-# Clone the repository
 git clone https://github.com/g-battaglia/svg_polish.git
 cd svg_polish
-
-# Install dependencies
 uv sync
 
-# Run tests
-uv run poe test
+uv run poe test          # full test suite (~660 tests)
+uv run poe test-cov      # with coverage HTML report
+uv run poe lint          # ruff lint
+uv run poe format        # ruff format
+uv run poe typecheck     # mypy strict
+uv run poe check         # all of the above
 
-# Run tests with coverage
-uv run poe test-cov
-
-# Lint and format
-uv run poe lint
-uv run poe format
-
-# Type check
-uv run poe typecheck
-
-# Run all checks
-uv run poe check
+uv run poe bench         # save a performance baseline
+uv run poe bench-compare # compare current run against the baseline
 ```
 
-### Project Structure
+## Origin
 
-```
-svg_polish/
-├── src/svg_polish/          # Source code
-│   ├── __init__.py          # Public API (optimize, optimize_file)
-│   ├── optimizer.py         # Core SVG optimization engine
-│   ├── stats.py             # Optimization statistics
-│   ├── css.py               # Minimal CSS parser
-│   ├── svg_regex.py         # SVG path data parser
-│   ├── svg_transform.py     # SVG transform parser
-│   └── py.typed             # PEP 561 type marker
-├── tests/                   # Test suite (469 tests, 100% coverage)
-│   ├── test_optimizer.py    # Core optimizer tests
-│   ├── test_public_api.py   # Public API tests
-│   ├── test_css.py          # CSS parser tests
-│   └── fixtures/            # SVG test fixtures
-├── pyproject.toml           # Project configuration
-├── LICENSE                  # Apache License 2.0
-└── NOTICE                   # Attribution notices
-```
+`svg_polish` is a fork of [Scour](https://github.com/scour-project/scour), originally created by **Jeff Schiller** and **Louis Simard** in 2010, later maintained by **Tobias Oberstein** and **Patrick Storz**. Upstream Scour has been dormant since August 2021. This v1.0 release is a ground-up modernisation:
 
-## Origin and Attribution
-
-SVG Polish is a fork of [Scour](https://github.com/scour-project/scour), an SVG optimizer originally created by **Jeff Schiller** and **Louis Simard** in 2010, later maintained by **Tobias Oberstein** and **Patrick Storz**.
-
-This fork modernizes the project with:
-
-- Python 3.10+ only (removed Python 2 compatibility and `six` dependency)
-- Modern packaging with `pyproject.toml`, `uv`, and `hatchling`
-- Type annotations and `py.typed` marker
-- `pytest` test suite with coverage reporting
-- Clean public API (`optimize()`, `optimize_file()`)
-- Active maintenance
-
-The original Scour project has been dormant since August 2021.
+- Python 3.10+ only; no `six`, no Python 2 compatibility shims.
+- Single typed public surface (`OptimizeOptions`, `OptimizeResult`, `optimize_*`).
+- Modular passes (one file per transformation) instead of a 4 700-line monolith.
+- Thread-safe `Decimal` precision contexts.
+- Secure-by-default XML parsing with `defusedxml`.
+- 100% line coverage, `mypy --strict` clean, `ruff` clean.
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE) for details.
+Apache License 2.0 — see [LICENSE](LICENSE).
 
-The file `svg_regex.py` is derived from code by Enthought, Inc., licensed under the BSD 3-Clause License.
-
-See [NOTICE](NOTICE) for full attribution.
+`svg_regex.py` is derived from code by Enthought, Inc. (BSD 3-Clause). Full attribution in [NOTICE](NOTICE).

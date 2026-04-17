@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from svg_polish import optimize
-from svg_polish.optimizer import parse_args, scourString
+from svg_polish.optimizer import parse_args, scour_string
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -18,7 +18,7 @@ def _scour(svg_path: Path, args: list[str] | None = None) -> str:
     """Load an SVG fixture and optimize it."""
     text = svg_path.read_text(encoding="utf-8")
     options = parse_args(args) if args else None
-    return scourString(text, options)
+    return scour_string(text, options)
 
 
 def _optimize(svg_path: Path) -> str:

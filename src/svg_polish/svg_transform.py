@@ -57,7 +57,23 @@ import re
 from collections.abc import Callable
 from decimal import Decimal
 from functools import partial
-from typing import Any, Generator
+from typing import Any, Generator, cast
+
+from svg_polish.types import _precision
+
+
+def _make_number(text: str) -> Decimal:
+    """Parse *text* into a numeric value sized for the current engine.
+
+    Mirrors :func:`svg_polish.svg_regex._make_number`: returns a
+    normalised :class:`~decimal.Decimal` under the default engine and a
+    native :class:`float` under ``decimal_engine="float"``. The return
+    is cast to ``Decimal`` for the type system; downstream transform
+    code uses arithmetic that works on either.
+    """
+    if _precision.engine == "float":
+        return cast(Decimal, float(text))
+    return Decimal(text) * 1
 
 
 class _EOF:
@@ -277,9 +293,9 @@ class SVGTransformationParser:
         """Consume a required numeric token. Raises SyntaxError if not a number."""
         if token[0] not in self.number_tokens:
             raise SyntaxError("expecting a number; got %r" % (token,))
-        # Multiply by 1 to normalise Decimal (strips trailing zeros, etc.).
+        # _make_number switches between Decimal and float per the active engine.
         assert token[1] is not None
-        x = Decimal(token[1]) * 1
+        x = _make_number(token[1])
         token = next_val_fn()
         return x, token
 
@@ -293,7 +309,7 @@ class SVGTransformationParser:
             return None, token
         else:
             assert token[1] is not None
-            x = Decimal(token[1]) * 1
+            x = _make_number(token[1])
             token = next_val_fn()
             return x, token
 

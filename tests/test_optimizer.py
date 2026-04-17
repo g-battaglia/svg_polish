@@ -14,10 +14,11 @@ import unittest
 from pathlib import Path
 
 from svg_polish.optimizer import (
+    generate_default_options,
     make_well_formed,
     parse_args,
-    scourString,
-    scourXmlFile,
+    scour_string,
+    scour_xml_file,
     start,
     run,
     XML_ENTS_ESCAPE_APOS,
@@ -56,20 +57,20 @@ class EmptyOptions(unittest.TestCase):
     def test_scourString(self):
         options = ScourOptions
         try:
-            scourString(self.MINIMAL_SVG, options)
+            scour_string(self.MINIMAL_SVG, options)
             fail = False
         except Exception:
             fail = True
-        self.assertEqual(fail, False, 'Exception when calling "scourString" with empty options object')
+        self.assertEqual(fail, False, 'Exception when calling "scour_string" with empty options object')
 
     def test_scourXmlFile(self):
         options = ScourOptions
         try:
-            scourXmlFile(FIXTURES_DIR + "/minimal.svg", options)
+            scour_xml_file(FIXTURES_DIR + "/minimal.svg", options)
             fail = False
         except Exception:
             fail = True
-        self.assertEqual(fail, False, 'Exception when calling "scourXmlFile" with empty options object')
+        self.assertEqual(fail, False, 'Exception when calling "scour_xml_file" with empty options object')
 
     def test_start(self):
         options = ScourOptions
@@ -95,7 +96,7 @@ class InvalidOptions(unittest.TestCase):
         options = ScourOptions
         options.invalidOption = "invalid value"
         try:
-            scourXmlFile(FIXTURES_DIR + "/ids-to-strip.svg", options)
+            scour_xml_file(FIXTURES_DIR + "/ids-to-strip.svg", options)
             fail = False
         except Exception:
             fail = True
@@ -104,7 +105,7 @@ class InvalidOptions(unittest.TestCase):
 
 class GetElementById(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/ids.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/ids.svg")
         self.assertIsNotNone(doc.getElementById("svg1"), "Root SVG element not found by ID")
         self.assertIsNotNone(doc.getElementById("linearGradient1"), "linearGradient not found by ID")
         self.assertIsNotNone(doc.getElementById("layer1"), "g not found by ID")
@@ -116,7 +117,7 @@ class NoInkscapeElements(unittest.TestCase):
     def runTest(self):
         self.assertNotEqual(
             walkTree(
-                scourXmlFile(FIXTURES_DIR + "/sodipodi.svg").documentElement,
+                scour_xml_file(FIXTURES_DIR + "/sodipodi.svg").documentElement,
                 lambda e: e.namespaceURI != "http://www.inkscape.org/namespaces/inkscape",
             ),
             False,
@@ -128,7 +129,7 @@ class NoSodipodiElements(unittest.TestCase):
     def runTest(self):
         self.assertNotEqual(
             walkTree(
-                scourXmlFile(FIXTURES_DIR + "/sodipodi.svg").documentElement,
+                scour_xml_file(FIXTURES_DIR + "/sodipodi.svg").documentElement,
                 lambda e: e.namespaceURI != "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd",
             ),
             False,
@@ -140,7 +141,7 @@ class NoAdobeIllustratorElements(unittest.TestCase):
     def runTest(self):
         self.assertNotEqual(
             walkTree(
-                scourXmlFile(FIXTURES_DIR + "/adobe.svg").documentElement,
+                scour_xml_file(FIXTURES_DIR + "/adobe.svg").documentElement,
                 lambda e: e.namespaceURI != "http://ns.adobe.com/AdobeIllustrator/10.0/",
             ),
             False,
@@ -152,7 +153,7 @@ class NoAdobeGraphsElements(unittest.TestCase):
     def runTest(self):
         self.assertNotEqual(
             walkTree(
-                scourXmlFile(FIXTURES_DIR + "/adobe.svg").documentElement,
+                scour_xml_file(FIXTURES_DIR + "/adobe.svg").documentElement,
                 lambda e: e.namespaceURI != "http://ns.adobe.com/Graphs/1.0/",
             ),
             False,
@@ -164,7 +165,7 @@ class NoAdobeSVGViewerElements(unittest.TestCase):
     def runTest(self):
         self.assertNotEqual(
             walkTree(
-                scourXmlFile(FIXTURES_DIR + "/adobe.svg").documentElement,
+                scour_xml_file(FIXTURES_DIR + "/adobe.svg").documentElement,
                 lambda e: e.namespaceURI != "http://ns.adobe.com/AdobeSVGViewerExtensions/3.0/",
             ),
             False,
@@ -176,7 +177,7 @@ class NoAdobeVariablesElements(unittest.TestCase):
     def runTest(self):
         self.assertNotEqual(
             walkTree(
-                scourXmlFile(FIXTURES_DIR + "/adobe.svg").documentElement,
+                scour_xml_file(FIXTURES_DIR + "/adobe.svg").documentElement,
                 lambda e: e.namespaceURI != "http://ns.adobe.com/Variables/1.0/",
             ),
             False,
@@ -188,7 +189,7 @@ class NoAdobeSaveForWebElements(unittest.TestCase):
     def runTest(self):
         self.assertNotEqual(
             walkTree(
-                scourXmlFile(FIXTURES_DIR + "/adobe.svg").documentElement,
+                scour_xml_file(FIXTURES_DIR + "/adobe.svg").documentElement,
                 lambda e: e.namespaceURI != "http://ns.adobe.com/SaveForWeb/1.0/",
             ),
             False,
@@ -200,7 +201,7 @@ class NoAdobeExtensibilityElements(unittest.TestCase):
     def runTest(self):
         self.assertNotEqual(
             walkTree(
-                scourXmlFile(FIXTURES_DIR + "/adobe.svg").documentElement,
+                scour_xml_file(FIXTURES_DIR + "/adobe.svg").documentElement,
                 lambda e: e.namespaceURI != "http://ns.adobe.com/Extensibility/1.0/",
             ),
             False,
@@ -212,7 +213,7 @@ class NoAdobeFlowsElements(unittest.TestCase):
     def runTest(self):
         self.assertNotEqual(
             walkTree(
-                scourXmlFile(FIXTURES_DIR + "/adobe.svg").documentElement,
+                scour_xml_file(FIXTURES_DIR + "/adobe.svg").documentElement,
                 lambda e: e.namespaceURI != "http://ns.adobe.com/Flows/1.0/",
             ),
             False,
@@ -224,7 +225,7 @@ class NoAdobeImageReplacementElements(unittest.TestCase):
     def runTest(self):
         self.assertNotEqual(
             walkTree(
-                scourXmlFile(FIXTURES_DIR + "/adobe.svg").documentElement,
+                scour_xml_file(FIXTURES_DIR + "/adobe.svg").documentElement,
                 lambda e: e.namespaceURI != "http://ns.adobe.com/ImageReplacement/1.0/",
             ),
             False,
@@ -236,7 +237,7 @@ class NoAdobeCustomElements(unittest.TestCase):
     def runTest(self):
         self.assertNotEqual(
             walkTree(
-                scourXmlFile(FIXTURES_DIR + "/adobe.svg").documentElement,
+                scour_xml_file(FIXTURES_DIR + "/adobe.svg").documentElement,
                 lambda e: e.namespaceURI != "http://ns.adobe.com/GenericCustomNamespace/1.0/",
             ),
             False,
@@ -248,7 +249,7 @@ class NoAdobeXPathElements(unittest.TestCase):
     def runTest(self):
         self.assertNotEqual(
             walkTree(
-                scourXmlFile(FIXTURES_DIR + "/adobe.svg").documentElement,
+                scour_xml_file(FIXTURES_DIR + "/adobe.svg").documentElement,
                 lambda e: e.namespaceURI != "http://ns.adobe.com/XPath/1.0/",
             ),
             False,
@@ -258,7 +259,7 @@ class NoAdobeXPathElements(unittest.TestCase):
 
 class DoNotRemoveTitleWithOnlyText(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/descriptive-elements-with-text.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/descriptive-elements-with-text.svg")
         self.assertEqual(
             len(doc.getElementsByTagNameNS(SVGNS, "title")), 1, "Removed title element with only text child"
         )
@@ -266,13 +267,13 @@ class DoNotRemoveTitleWithOnlyText(unittest.TestCase):
 
 class RemoveEmptyTitleElement(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/empty-descriptive-elements.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/empty-descriptive-elements.svg")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "title")), 0, "Did not remove empty title element")
 
 
 class DoNotRemoveDescriptionWithOnlyText(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/descriptive-elements-with-text.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/descriptive-elements-with-text.svg")
         self.assertEqual(
             len(doc.getElementsByTagNameNS(SVGNS, "desc")), 1, "Removed description element with only text child"
         )
@@ -280,13 +281,13 @@ class DoNotRemoveDescriptionWithOnlyText(unittest.TestCase):
 
 class RemoveEmptyDescriptionElement(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/empty-descriptive-elements.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/empty-descriptive-elements.svg")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "desc")), 0, "Did not remove empty description element")
 
 
 class DoNotRemoveMetadataWithOnlyText(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/descriptive-elements-with-text.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/descriptive-elements-with-text.svg")
         self.assertEqual(
             len(doc.getElementsByTagNameNS(SVGNS, "metadata")), 1, "Removed metadata element with only text child"
         )
@@ -294,13 +295,13 @@ class DoNotRemoveMetadataWithOnlyText(unittest.TestCase):
 
 class RemoveEmptyMetadataElement(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/empty-descriptive-elements.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/empty-descriptive-elements.svg")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "metadata")), 0, "Did not remove empty metadata element")
 
 
 class DoNotRemoveDescriptiveElementsWithOnlyText(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/descriptive-elements-with-text.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/descriptive-elements-with-text.svg")
         self.assertEqual(
             len(doc.getElementsByTagNameNS(SVGNS, "title")), 1, "Removed title element with only text child"
         )
@@ -314,7 +315,7 @@ class DoNotRemoveDescriptiveElementsWithOnlyText(unittest.TestCase):
 
 class RemoveEmptyDescriptiveElements(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/empty-descriptive-elements.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/empty-descriptive-elements.svg")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "title")), 0, "Did not remove empty title element")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "desc")), 0, "Did not remove empty description element")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "metadata")), 0, "Did not remove empty metadata element")
@@ -322,19 +323,19 @@ class RemoveEmptyDescriptiveElements(unittest.TestCase):
 
 class RemoveEmptyGElements(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/empty-g.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/empty-g.svg")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "g")), 1, "Did not remove empty g element")
 
 
 class RemoveUnreferencedPattern(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/unreferenced-pattern.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/unreferenced-pattern.svg")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "pattern")), 0, "Unreferenced pattern not removed")
 
 
 class RemoveUnreferencedLinearGradient(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/unreferenced-linearGradient.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/unreferenced-linearGradient.svg")
         self.assertEqual(
             len(doc.getElementsByTagNameNS(SVGNS, "linearGradient")), 0, "Unreferenced linearGradient not removed"
         )
@@ -342,7 +343,7 @@ class RemoveUnreferencedLinearGradient(unittest.TestCase):
 
 class RemoveUnreferencedRadialGradient(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/unreferenced-radialGradient.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/unreferenced-radialGradient.svg")
         self.assertEqual(
             len(doc.getElementsByTagNameNS(SVGNS, "radialradient")), 0, "Unreferenced radialGradient not removed"
         )
@@ -350,13 +351,13 @@ class RemoveUnreferencedRadialGradient(unittest.TestCase):
 
 class RemoveUnreferencedElementInDefs(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/referenced-elements-1.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/referenced-elements-1.svg")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "rect")), 1, "Unreferenced rect left in defs")
 
 
 class RemoveUnreferencedDefs(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/unreferenced-defs.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/unreferenced-defs.svg")
         self.assertEqual(
             len(doc.getElementsByTagNameNS(SVGNS, "linearGradient")), 1, "Referenced linearGradient removed from defs"
         )
@@ -370,7 +371,7 @@ class RemoveUnreferencedDefs(unittest.TestCase):
 
 class KeepUnreferencedDefs(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/unreferenced-defs.svg", parse_args(["--keep-unreferenced-defs"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/unreferenced-defs.svg", parse_args(["--keep-unreferenced-defs"]))
         self.assertEqual(
             len(doc.getElementsByTagNameNS(SVGNS, "linearGradient")),
             1,
@@ -400,27 +401,27 @@ class KeepUnreferencedDefs(unittest.TestCase):
 
 class DoNotRemoveChainedRefsInDefs(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/refs-in-defs.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/refs-in-defs.svg")
         g = doc.getElementsByTagNameNS(SVGNS, "g")[0]
         self.assertEqual(g.childNodes.length >= 2, True, "Chained references not honored in defs")
 
 
 class KeepTitleInDefs(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/referenced-elements-1.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/referenced-elements-1.svg")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "title")), 1, "Title removed from in defs")
 
 
 class RemoveNestedDefs(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/nested-defs.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/nested-defs.svg")
         allDefs = doc.getElementsByTagNameNS(SVGNS, "defs")
         self.assertEqual(len(allDefs), 1, "More than one defs left in doc")
 
 
 class KeepUnreferencedIDsWhenEnabled(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/ids-to-strip.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/ids-to-strip.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "svg")[0].getAttribute("id"),
             "boo",
@@ -430,13 +431,13 @@ class KeepUnreferencedIDsWhenEnabled(unittest.TestCase):
 
 class RemoveUnreferencedIDsWhenEnabled(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/ids-to-strip.svg", parse_args(["--enable-id-stripping"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/ids-to-strip.svg", parse_args(["--enable-id-stripping"]))
         self.assertEqual(doc.getElementsByTagNameNS(SVGNS, "svg")[0].getAttribute("id"), "", "<svg> ID not stripped")
 
 
 class ProtectIDs(unittest.TestCase):
     def test_protect_none(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/ids-protect.svg", parse_args(["--enable-id-stripping"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/ids-protect.svg", parse_args(["--enable-id-stripping"]))
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "text")[0].getAttribute("id"),
             "",
@@ -464,7 +465,7 @@ class ProtectIDs(unittest.TestCase):
         )
 
     def test_protect_ids_noninkscape(self):
-        doc = scourXmlFile(
+        doc = scour_xml_file(
             FIXTURES_DIR + "/ids-protect.svg", parse_args(["--enable-id-stripping", "--protect-ids-noninkscape"])
         )
         self.assertEqual(
@@ -494,7 +495,7 @@ class ProtectIDs(unittest.TestCase):
         )
 
     def test_protect_ids_list(self):
-        doc = scourXmlFile(
+        doc = scour_xml_file(
             FIXTURES_DIR + "/ids-protect.svg", parse_args(["--enable-id-stripping", "--protect-ids-list=text2,text3"])
         )
         self.assertEqual(
@@ -524,7 +525,7 @@ class ProtectIDs(unittest.TestCase):
         )
 
     def test_protect_ids_prefix(self):
-        doc = scourXmlFile(
+        doc = scour_xml_file(
             FIXTURES_DIR + "/ids-protect.svg", parse_args(["--enable-id-stripping", "--protect-ids-prefix=my"])
         )
         self.assertEqual(
@@ -556,13 +557,13 @@ class ProtectIDs(unittest.TestCase):
 
 class RemoveUselessNestedGroups(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/nested-useless-groups.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/nested-useless-groups.svg")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "g")), 1, "Useless nested groups not removed")
 
 
 class DoNotRemoveUselessNestedGroups(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/nested-useless-groups.svg", parse_args(["--disable-group-collapsing"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/nested-useless-groups.svg", parse_args(["--disable-group-collapsing"]))
         self.assertEqual(
             len(doc.getElementsByTagNameNS(SVGNS, "g")),
             2,
@@ -572,19 +573,19 @@ class DoNotRemoveUselessNestedGroups(unittest.TestCase):
 
 class DoNotRemoveNestedGroupsWithTitle(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/groups-with-title-desc.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/groups-with-title-desc.svg")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "g")), 2, "Nested groups with title was removed")
 
 
 class DoNotRemoveNestedGroupsWithDesc(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/groups-with-title-desc.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/groups-with-title-desc.svg")
         self.assertEqual(len(doc.getElementsByTagNameNS(SVGNS, "g")), 2, "Nested groups with desc was removed")
 
 
 class RemoveDuplicateLinearGradientStops(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/duplicate-gradient-stops.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/duplicate-gradient-stops.svg")
         grad = doc.getElementsByTagNameNS(SVGNS, "linearGradient")
         self.assertEqual(
             len(grad[0].getElementsByTagNameNS(SVGNS, "stop")), 3, "Duplicate linear gradient stops not removed"
@@ -593,7 +594,7 @@ class RemoveDuplicateLinearGradientStops(unittest.TestCase):
 
 class RemoveDuplicateLinearGradientStopsPct(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/duplicate-gradient-stops-pct.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/duplicate-gradient-stops-pct.svg")
         grad = doc.getElementsByTagNameNS(SVGNS, "linearGradient")
         self.assertEqual(
             len(grad[0].getElementsByTagNameNS(SVGNS, "stop")),
@@ -604,7 +605,7 @@ class RemoveDuplicateLinearGradientStopsPct(unittest.TestCase):
 
 class RemoveDuplicateRadialGradientStops(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/duplicate-gradient-stops.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/duplicate-gradient-stops.svg")
         grad = doc.getElementsByTagNameNS(SVGNS, "radialGradient")
         self.assertEqual(
             len(grad[0].getElementsByTagNameNS(SVGNS, "stop")), 3, "Duplicate radial gradient stops not removed"
@@ -613,7 +614,7 @@ class RemoveDuplicateRadialGradientStops(unittest.TestCase):
 
 class NoSodipodiNamespaceDecl(unittest.TestCase):
     def runTest(self):
-        attrs = scourXmlFile(FIXTURES_DIR + "/sodipodi.svg").documentElement.attributes
+        attrs = scour_xml_file(FIXTURES_DIR + "/sodipodi.svg").documentElement.attributes
         for i in range(len(attrs)):
             self.assertNotEqual(
                 attrs.item(i).nodeValue,
@@ -624,7 +625,7 @@ class NoSodipodiNamespaceDecl(unittest.TestCase):
 
 class NoInkscapeNamespaceDecl(unittest.TestCase):
     def runTest(self):
-        attrs = scourXmlFile(FIXTURES_DIR + "/inkscape.svg").documentElement.attributes
+        attrs = scour_xml_file(FIXTURES_DIR + "/inkscape.svg").documentElement.attributes
         for i in range(len(attrs)):
             self.assertNotEqual(
                 attrs.item(i).nodeValue,
@@ -645,7 +646,7 @@ class NoSodipodiAttributes(unittest.TestCase):
             return True
 
         self.assertNotEqual(
-            walkTree(scourXmlFile(FIXTURES_DIR + "/sodipodi.svg").documentElement, findSodipodiAttr),
+            walkTree(scour_xml_file(FIXTURES_DIR + "/sodipodi.svg").documentElement, findSodipodiAttr),
             False,
             "Found Sodipodi attributes",
         )
@@ -663,7 +664,7 @@ class NoInkscapeAttributes(unittest.TestCase):
             return True
 
         self.assertNotEqual(
-            walkTree(scourXmlFile(FIXTURES_DIR + "/inkscape.svg").documentElement, findInkscapeAttr),
+            walkTree(scour_xml_file(FIXTURES_DIR + "/inkscape.svg").documentElement, findInkscapeAttr),
             False,
             "Found Inkscape attributes",
         )
@@ -673,7 +674,7 @@ class KeepInkscapeNamespaceDeclarationsWhenKeepEditorData(unittest.TestCase):
     def runTest(self):
         options = ScourOptions
         options.keep_editor_data = True
-        attrs = scourXmlFile(FIXTURES_DIR + "/inkscape.svg", options).documentElement.attributes
+        attrs = scour_xml_file(FIXTURES_DIR + "/inkscape.svg", options).documentElement.attributes
         FoundNamespace = False
         for i in range(len(attrs)):
             if attrs.item(i).nodeValue == "http://www.inkscape.org/namespaces/inkscape":
@@ -689,7 +690,7 @@ class KeepSodipodiNamespaceDeclarationsWhenKeepEditorData(unittest.TestCase):
     def runTest(self):
         options = ScourOptions
         options.keep_editor_data = True
-        attrs = scourXmlFile(FIXTURES_DIR + "/sodipodi.svg", options).documentElement.attributes
+        attrs = scour_xml_file(FIXTURES_DIR + "/sodipodi.svg", options).documentElement.attributes
         FoundNamespace = False
         for i in range(len(attrs)):
             if attrs.item(i).nodeValue == "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd":
@@ -703,14 +704,14 @@ class KeepSodipodiNamespaceDeclarationsWhenKeepEditorData(unittest.TestCase):
 
 class KeepReferencedFonts(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/referenced-font.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/referenced-font.svg")
         fonts = doc.documentElement.getElementsByTagNameNS(SVGNS, "font")
         self.assertEqual(len(fonts), 1, "Font wrongly removed from <defs>")
 
 
 class ConvertStyleToAttrs(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-transparent.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-transparent.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("style"), "", "style attribute not emptied"
         )
@@ -718,7 +719,7 @@ class ConvertStyleToAttrs(unittest.TestCase):
 
 class RemoveStrokeWhenStrokeTransparent(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-transparent.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-transparent.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke"),
             "",
@@ -728,7 +729,7 @@ class RemoveStrokeWhenStrokeTransparent(unittest.TestCase):
 
 class RemoveStrokeWidthWhenStrokeTransparent(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-transparent.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-transparent.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-width"),
             "",
@@ -738,7 +739,7 @@ class RemoveStrokeWidthWhenStrokeTransparent(unittest.TestCase):
 
 class RemoveStrokeLinecapWhenStrokeTransparent(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-transparent.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-transparent.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-linecap"),
             "",
@@ -748,7 +749,7 @@ class RemoveStrokeLinecapWhenStrokeTransparent(unittest.TestCase):
 
 class RemoveStrokeLinejoinWhenStrokeTransparent(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-transparent.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-transparent.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-linejoin"),
             "",
@@ -758,7 +759,7 @@ class RemoveStrokeLinejoinWhenStrokeTransparent(unittest.TestCase):
 
 class RemoveStrokeDasharrayWhenStrokeTransparent(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-transparent.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-transparent.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-dasharray"),
             "",
@@ -768,7 +769,7 @@ class RemoveStrokeDasharrayWhenStrokeTransparent(unittest.TestCase):
 
 class RemoveStrokeDashoffsetWhenStrokeTransparent(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-transparent.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-transparent.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-dashoffset"),
             "",
@@ -778,7 +779,7 @@ class RemoveStrokeDashoffsetWhenStrokeTransparent(unittest.TestCase):
 
 class RemoveStrokeWhenStrokeWidthZero(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-nowidth.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-nowidth.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke"),
             "",
@@ -788,7 +789,7 @@ class RemoveStrokeWhenStrokeWidthZero(unittest.TestCase):
 
 class RemoveStrokeOpacityWhenStrokeWidthZero(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-nowidth.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-nowidth.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-opacity"),
             "",
@@ -798,7 +799,7 @@ class RemoveStrokeOpacityWhenStrokeWidthZero(unittest.TestCase):
 
 class RemoveStrokeLinecapWhenStrokeWidthZero(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-nowidth.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-nowidth.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-linecap"),
             "",
@@ -808,7 +809,7 @@ class RemoveStrokeLinecapWhenStrokeWidthZero(unittest.TestCase):
 
 class RemoveStrokeLinejoinWhenStrokeWidthZero(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-nowidth.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-nowidth.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-linejoin"),
             "",
@@ -818,7 +819,7 @@ class RemoveStrokeLinejoinWhenStrokeWidthZero(unittest.TestCase):
 
 class RemoveStrokeDasharrayWhenStrokeWidthZero(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-nowidth.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-nowidth.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-dasharray"),
             "",
@@ -828,7 +829,7 @@ class RemoveStrokeDasharrayWhenStrokeWidthZero(unittest.TestCase):
 
 class RemoveStrokeDashoffsetWhenStrokeWidthZero(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-nowidth.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-nowidth.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-dashoffset"),
             "",
@@ -838,7 +839,7 @@ class RemoveStrokeDashoffsetWhenStrokeWidthZero(unittest.TestCase):
 
 class RemoveStrokeWhenStrokeNone(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-none.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke"),
             "",
@@ -848,7 +849,7 @@ class RemoveStrokeWhenStrokeNone(unittest.TestCase):
 
 class KeepStrokeWhenInheritedFromParent(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-none.svg")
         self.assertEqual(
             doc.getElementById("p1").getAttribute("stroke"),
             "none",
@@ -858,7 +859,7 @@ class KeepStrokeWhenInheritedFromParent(unittest.TestCase):
 
 class KeepStrokeWhenInheritedByChild(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-none.svg")
         self.assertEqual(
             doc.getElementById("g2").getAttribute("stroke"),
             "none",
@@ -868,7 +869,7 @@ class KeepStrokeWhenInheritedByChild(unittest.TestCase):
 
 class RemoveStrokeWidthWhenStrokeNone(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-none.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-width"),
             "",
@@ -878,7 +879,7 @@ class RemoveStrokeWidthWhenStrokeNone(unittest.TestCase):
 
 class KeepStrokeWidthWhenInheritedByChild(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-none.svg")
         self.assertEqual(
             doc.getElementById("g3").getAttribute("stroke-width"),
             "1px",
@@ -888,7 +889,7 @@ class KeepStrokeWidthWhenInheritedByChild(unittest.TestCase):
 
 class RemoveStrokeOpacityWhenStrokeNone(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-none.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-opacity"),
             "",
@@ -898,7 +899,7 @@ class RemoveStrokeOpacityWhenStrokeNone(unittest.TestCase):
 
 class RemoveStrokeLinecapWhenStrokeNone(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-none.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-linecap"),
             "",
@@ -908,7 +909,7 @@ class RemoveStrokeLinecapWhenStrokeNone(unittest.TestCase):
 
 class RemoveStrokeLinejoinWhenStrokeNone(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-none.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-linejoin"),
             "",
@@ -918,7 +919,7 @@ class RemoveStrokeLinejoinWhenStrokeNone(unittest.TestCase):
 
 class RemoveStrokeDasharrayWhenStrokeNone(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-none.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-dasharray"),
             "",
@@ -928,7 +929,7 @@ class RemoveStrokeDasharrayWhenStrokeNone(unittest.TestCase):
 
 class RemoveStrokeDashoffsetWhenStrokeNone(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/stroke-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/stroke-none.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("stroke-dashoffset"),
             "",
@@ -938,7 +939,7 @@ class RemoveStrokeDashoffsetWhenStrokeNone(unittest.TestCase):
 
 class RemoveFillRuleWhenFillNone(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/fill-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/fill-none.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("fill-rule"),
             "",
@@ -948,7 +949,7 @@ class RemoveFillRuleWhenFillNone(unittest.TestCase):
 
 class RemoveFillOpacityWhenFillNone(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/fill-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/fill-none.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("fill-opacity"),
             "",
@@ -958,7 +959,7 @@ class RemoveFillOpacityWhenFillNone(unittest.TestCase):
 
 class ConvertFillPropertyToAttr(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/fill-none.svg", parse_args(["--disable-simplify-colors"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/fill-none.svg", parse_args(["--disable-simplify-colors"]))
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[1].getAttribute("fill"),
             "black",
@@ -968,7 +969,7 @@ class ConvertFillPropertyToAttr(unittest.TestCase):
 
 class ConvertFillOpacityPropertyToAttr(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/fill-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/fill-none.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[1].getAttribute("fill-opacity"),
             ".5",
@@ -978,7 +979,7 @@ class ConvertFillOpacityPropertyToAttr(unittest.TestCase):
 
 class ConvertFillRuleOpacityPropertyToAttr(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/fill-none.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/fill-none.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "path")[1].getAttribute("fill-rule"),
             "evenodd",
@@ -988,7 +989,7 @@ class ConvertFillRuleOpacityPropertyToAttr(unittest.TestCase):
 
 class CollapseSinglyReferencedGradients(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/collapse-gradients.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/collapse-gradients.svg")
         self.assertEqual(
             len(doc.getElementsByTagNameNS(SVGNS, "linearGradient")),
             0,
@@ -998,7 +999,7 @@ class CollapseSinglyReferencedGradients(unittest.TestCase):
 
 class InheritGradientUnitsUponCollapsing(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/collapse-gradients.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/collapse-gradients.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "radialGradient")[0].getAttribute("gradientUnits"),
             "userSpaceOnUse",
@@ -1008,7 +1009,7 @@ class InheritGradientUnitsUponCollapsing(unittest.TestCase):
 
 class OverrideGradientUnitsUponCollapsing(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/collapse-gradients-gradientUnits.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/collapse-gradients-gradientUnits.svg")
         self.assertEqual(
             doc.getElementsByTagNameNS(SVGNS, "radialGradient")[0].getAttribute("gradientUnits"),
             "",
@@ -1018,7 +1019,7 @@ class OverrideGradientUnitsUponCollapsing(unittest.TestCase):
 
 class DoNotCollapseMultiplyReferencedGradients(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/dont-collapse-gradients.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/dont-collapse-gradients.svg")
         self.assertNotEqual(
             len(doc.getElementsByTagNameNS(SVGNS, "linearGradient")), 0, "Multiply-referenced linear gradient collapsed"
         )
@@ -1026,7 +1027,7 @@ class DoNotCollapseMultiplyReferencedGradients(unittest.TestCase):
 
 class PreserveXLinkHrefWhenCollapsingReferencedGradients(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/collapse-gradients-preserve-xlink-href.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/collapse-gradients-preserve-xlink-href.svg")
         g1 = doc.getElementById("g1")
         g2 = doc.getElementById("g2")
         g3 = doc.getElementById("g3")
@@ -1038,35 +1039,35 @@ class PreserveXLinkHrefWhenCollapsingReferencedGradients(unittest.TestCase):
 
 class RemoveTrailingZerosFromPath(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-truncate-zeros.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-truncate-zeros.svg")
         path = doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("d")
         self.assertEqual(path[:4] == "m300" and path[4] != ".", True, "Trailing zeros not removed from path data")
 
 
 class RemoveTrailingZerosFromPathAfterCalculation(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-truncate-zeros-calc.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-truncate-zeros-calc.svg")
         path = doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("d")
         self.assertEqual(path, "m5.81 0h0.1", "Trailing zeros not removed from path data after calculation")
 
 
 class RemoveDelimiterBeforeNegativeCoordsInPath(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-truncate-zeros.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-truncate-zeros.svg")
         path = doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("d")
         self.assertEqual(path[4], "-", "Delimiters not removed before negative coordinates in path data")
 
 
 class UseScientificNotationToShortenCoordsInPath(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-use-scientific-notation.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-use-scientific-notation.svg")
         path = doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("d")
         self.assertEqual(path, "m1e4 0", "Not using scientific notation for path coord when representation is shorter")
 
 
 class ConvertAbsoluteToRelativePathCommands(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-abs-to-rel.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-abs-to-rel.svg")
         path = svg_parser.parse(doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("d"))
         self.assertEqual(path[1][0], "v", "Absolute V command not converted to relative v command")
         self.assertEqual(float(path[1][1][0]), -20.0, "Absolute V value not converted to relative v value")
@@ -1074,7 +1075,7 @@ class ConvertAbsoluteToRelativePathCommands(unittest.TestCase):
 
 class RoundPathData(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-precision.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-precision.svg")
         path = svg_parser.parse(doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("d"))
         self.assertEqual(float(path[0][1][0]), 100.0, "Not rounding down")
         self.assertEqual(float(path[0][1][1]), 100.0, "Not rounding up")
@@ -1082,14 +1083,14 @@ class RoundPathData(unittest.TestCase):
 
 class LimitPrecisionInPathData(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-precision.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-precision.svg")
         path = svg_parser.parse(doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("d"))
         self.assertEqual(float(path[1][1][0]), 100.01, "Not correctly limiting precision on path data")
 
 
 class KeepPrecisionInPathDataIfSameLength(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-precision.svg", parse_args(["--set-precision=1"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/path-precision.svg", parse_args(["--set-precision=1"]))
         paths = doc.getElementsByTagNameNS(SVGNS, "path")
         for path in paths[1:3]:
             self.assertEqual(
@@ -1108,7 +1109,7 @@ class KeepPrecisionInPathDataIfSameLength(unittest.TestCase):
             'Precision not correctly reduced with "--set-precision=1" for path with ID ' + paths[5].getAttribute("id"),
         )
 
-        doc = scourXmlFile(FIXTURES_DIR + "/path-precision.svg", parse_args(["--set-precision=2"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/path-precision.svg", parse_args(["--set-precision=2"]))
         paths = doc.getElementsByTagNameNS(SVGNS, "path")
         for path in paths[1:3]:
             self.assertEqual(
@@ -1127,7 +1128,7 @@ class KeepPrecisionInPathDataIfSameLength(unittest.TestCase):
             'Precision not correctly reduced with "--set-precision=2" for path with ID ' + paths[5].getAttribute("id"),
         )
 
-        doc = scourXmlFile(FIXTURES_DIR + "/path-precision.svg", parse_args(["--set-precision=3"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/path-precision.svg", parse_args(["--set-precision=3"]))
         paths = doc.getElementsByTagNameNS(SVGNS, "path")
         for path in paths[1:3]:
             self.assertEqual(
@@ -1146,7 +1147,7 @@ class KeepPrecisionInPathDataIfSameLength(unittest.TestCase):
             'Precision not correctly reduced with "--set-precision=3" for path with ID ' + paths[5].getAttribute("id"),
         )
 
-        doc = scourXmlFile(FIXTURES_DIR + "/path-precision.svg", parse_args(["--set-precision=4"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/path-precision.svg", parse_args(["--set-precision=4"]))
         paths = doc.getElementsByTagNameNS(SVGNS, "path")
         for path in paths[1:3]:
             self.assertEqual(
@@ -1174,7 +1175,7 @@ class LimitPrecisionInControlPointPathData(unittest.TestCase):
             "s1 2 3.3 4.4 1 2 3.3 4.4 1 2 3.3 4.4m-10-13"
             "q1 2 3.3 4.4 1 2 3.3 4.4 1 2 3.3 4.4"
         )
-        doc = scourXmlFile(
+        doc = scour_xml_file(
             FIXTURES_DIR + "/path-precision-control-points.svg",
             parse_args(["--set-precision=2", "--set-c-precision=1"]),
         )
@@ -1184,14 +1185,14 @@ class LimitPrecisionInControlPointPathData(unittest.TestCase):
 
 class RemoveEmptyLineSegmentsFromPath(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-line-optimize.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-line-optimize.svg")
         path = svg_parser.parse(doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("d"))
         self.assertEqual(path[4][0], "z", "Did not remove an empty line segment from path")
 
 
 class RemoveEmptySegmentsFromPathWithButtLineCaps(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-with-caps.svg", parse_args(["--disable-style-to-xml"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/path-with-caps.svg", parse_args(["--disable-style-to-xml"]))
         for id in ["none", "attr_butt", "style_butt"]:
             path = svg_parser.parse(doc.getElementById(id).getAttribute("d"))
             self.assertEqual(len(path), 1, "Did not remove empty segments when path had butt linecaps")
@@ -1199,7 +1200,7 @@ class RemoveEmptySegmentsFromPathWithButtLineCaps(unittest.TestCase):
 
 class DoNotRemoveEmptySegmentsFromPathWithRoundSquareLineCaps(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-with-caps.svg", parse_args(["--disable-style-to-xml"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/path-with-caps.svg", parse_args(["--disable-style-to-xml"]))
         for id in ["attr_round", "attr_square", "style_round", "style_square"]:
             path = svg_parser.parse(doc.getElementById(id).getAttribute("d"))
             self.assertEqual(len(path), 2, "Did remove empty segments when path had round or square linecaps")
@@ -1207,7 +1208,7 @@ class DoNotRemoveEmptySegmentsFromPathWithRoundSquareLineCaps(unittest.TestCase)
 
 class ChangeLineToHorizontalLineSegmentInPath(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-line-optimize.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-line-optimize.svg")
         path = svg_parser.parse(doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("d"))
         self.assertEqual(path[1][0], "h", "Did not change line to horizontal line segment in path")
         self.assertEqual(float(path[1][1][0]), 200.0, "Did not calculate horizontal line segment in path correctly")
@@ -1215,7 +1216,7 @@ class ChangeLineToHorizontalLineSegmentInPath(unittest.TestCase):
 
 class ChangeLineToVerticalLineSegmentInPath(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-line-optimize.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-line-optimize.svg")
         path = svg_parser.parse(doc.getElementsByTagNameNS(SVGNS, "path")[0].getAttribute("d"))
         self.assertEqual(path[2][0], "v", "Did not change line to vertical line segment in path")
         self.assertEqual(float(path[2][1][0]), 100.0, "Did not calculate vertical line segment in path correctly")
@@ -1223,7 +1224,7 @@ class ChangeLineToVerticalLineSegmentInPath(unittest.TestCase):
 
 class ChangeBezierToShorthandInPath(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-bez-optimize.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-bez-optimize.svg")
         self.assertEqual(
             doc.getElementById("path1").getAttribute("d"),
             "m10 100c50-50 50 50 100 0s50 50 100 0",
@@ -1245,7 +1246,7 @@ class ChangeBezierToShorthandInPath(unittest.TestCase):
 
 class ChangeQuadToShorthandInPath(unittest.TestCase):
     def runTest(self):
-        path = scourXmlFile(FIXTURES_DIR + "/path-quad-optimize.svg").getElementsByTagNameNS(SVGNS, "path")[0]
+        path = scour_xml_file(FIXTURES_DIR + "/path-quad-optimize.svg").getElementsByTagNameNS(SVGNS, "path")[0]
         self.assertEqual(
             path.getAttribute("d"),
             "m10 100q50-50 100 0t100 0",
@@ -1255,7 +1256,7 @@ class ChangeQuadToShorthandInPath(unittest.TestCase):
 
 class BooleanFlagsInEllipticalPath(unittest.TestCase):
     def test_omit_spaces(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-elliptical-flags.svg", parse_args(["--no-renderer-workaround"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/path-elliptical-flags.svg", parse_args(["--no-renderer-workaround"]))
         paths = doc.getElementsByTagNameNS(SVGNS, "path")
         for path in paths:
             self.assertEqual(
@@ -1265,7 +1266,7 @@ class BooleanFlagsInEllipticalPath(unittest.TestCase):
             )
 
     def test_output_spaces_with_renderer_workaround(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-elliptical-flags.svg", parse_args(["--renderer-workaround"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/path-elliptical-flags.svg", parse_args(["--renderer-workaround"]))
         paths = doc.getElementsByTagNameNS(SVGNS, "path")
         for path in paths:
             self.assertEqual(
@@ -1277,11 +1278,11 @@ class BooleanFlagsInEllipticalPath(unittest.TestCase):
 
 class DoNotOptimzePathIfLarger(unittest.TestCase):
     def runTest(self):
-        p = scourXmlFile(FIXTURES_DIR + "/path-no-optimize.svg").getElementsByTagNameNS(SVGNS, "path")[0]
+        p = scour_xml_file(FIXTURES_DIR + "/path-no-optimize.svg").getElementsByTagNameNS(SVGNS, "path")[0]
         self.assertTrue(
             len(p.getAttribute("d"))
             <=
-            # this was the scoured path data as of 2016-08-31 without the length check in cleanPath():
+            # this was the scoured path data as of 2016-08-31 without the length check in clean_path():
             #    d="m100 100l100.12 100.12c14.877 4.8766-15.123-5.1234-0.00345-0.00345z"
             len("M100,100 L200.12345,200.12345 C215,205 185,195 200.12,200.12 Z"),
             "Made path data longer during optimization",
@@ -1290,7 +1291,7 @@ class DoNotOptimzePathIfLarger(unittest.TestCase):
 
 class HandleEncodingUTF8(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/encoding-utf8.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/encoding-utf8.svg")
         text = (
             "Hello in many languages:\n"
             "ar: أهلا\n"
@@ -1320,14 +1321,14 @@ class HandleEncodingUTF8(unittest.TestCase):
 
 class HandleEncodingISO_8859_15(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/encoding-iso-8859-15.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/encoding-iso-8859-15.svg")
         desc = str(doc.getElementsByTagNameNS(SVGNS, "desc")[0].firstChild.wholeText).strip()
         self.assertEqual(desc, "áèîäöüß€ŠšŽžŒœŸ", "Did not handle ISO 8859-15 encoded characters")
 
 
 class HandleSciNoInPathData(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-sn.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-sn.svg")
         self.assertEqual(
             len(doc.getElementsByTagNameNS(SVGNS, "path")), 1, "Did not handle scientific notation in path data"
         )
@@ -1335,57 +1336,57 @@ class HandleSciNoInPathData(unittest.TestCase):
 
 class TranslateRGBIntoHex(unittest.TestCase):
     def runTest(self):
-        elem = scourXmlFile(FIXTURES_DIR + "/color-formats.svg").getElementsByTagNameNS(SVGNS, "rect")[0]
+        elem = scour_xml_file(FIXTURES_DIR + "/color-formats.svg").getElementsByTagNameNS(SVGNS, "rect")[0]
         self.assertEqual(elem.getAttribute("fill"), "#0f1011", "Not converting rgb into hex")
 
 
 class TranslateRGBPctIntoHex(unittest.TestCase):
     def runTest(self):
-        elem = scourXmlFile(FIXTURES_DIR + "/color-formats.svg").getElementsByTagNameNS(SVGNS, "stop")[0]
+        elem = scour_xml_file(FIXTURES_DIR + "/color-formats.svg").getElementsByTagNameNS(SVGNS, "stop")[0]
         self.assertEqual(elem.getAttribute("stop-color"), "#7f0000", "Not converting rgb pct into hex")
 
 
 class TranslateColorNamesIntoHex(unittest.TestCase):
     def runTest(self):
-        elem = scourXmlFile(FIXTURES_DIR + "/color-formats.svg").getElementsByTagNameNS(SVGNS, "rect")[0]
+        elem = scour_xml_file(FIXTURES_DIR + "/color-formats.svg").getElementsByTagNameNS(SVGNS, "rect")[0]
         self.assertEqual(elem.getAttribute("stroke"), "#a9a9a9", "Not converting standard color names into hex")
 
 
 class TranslateExtendedColorNamesIntoHex(unittest.TestCase):
     def runTest(self):
-        elem = scourXmlFile(FIXTURES_DIR + "/color-formats.svg").getElementsByTagNameNS(SVGNS, "solidColor")[0]
+        elem = scour_xml_file(FIXTURES_DIR + "/color-formats.svg").getElementsByTagNameNS(SVGNS, "solidColor")[0]
         self.assertEqual(elem.getAttribute("solid-color"), "#fafad2", "Not converting extended color names into hex")
 
 
 class TranslateLongHexColorIntoShortHex(unittest.TestCase):
     def runTest(self):
-        elem = scourXmlFile(FIXTURES_DIR + "/color-formats.svg").getElementsByTagNameNS(SVGNS, "ellipse")[0]
+        elem = scour_xml_file(FIXTURES_DIR + "/color-formats.svg").getElementsByTagNameNS(SVGNS, "ellipse")[0]
         self.assertEqual(elem.getAttribute("fill"), "#fff", "Not converting long hex color into short hex")
 
 
 class DoNotConvertShortColorNames(unittest.TestCase):
     def runTest(self):
-        elem = scourXmlFile(FIXTURES_DIR + "/dont-convert-short-color-names.svg").getElementsByTagNameNS(SVGNS, "rect")[
-            0
-        ]
+        elem = scour_xml_file(FIXTURES_DIR + "/dont-convert-short-color-names.svg").getElementsByTagNameNS(
+            SVGNS, "rect"
+        )[0]
         self.assertEqual("red", elem.getAttribute("fill"), "Converted short color name to longer hex string")
 
 
 class AllowQuotEntitiesInUrl(unittest.TestCase):
     def runTest(self):
-        grads = scourXmlFile(FIXTURES_DIR + "/quot-in-url.svg").getElementsByTagNameNS(SVGNS, "linearGradient")
+        grads = scour_xml_file(FIXTURES_DIR + "/quot-in-url.svg").getElementsByTagNameNS(SVGNS, "linearGradient")
         self.assertEqual(len(grads), 1, "Removed referenced gradient when &quot; was in the url")
 
 
 class RemoveFontStylesFromNonTextShapes(unittest.TestCase):
     def runTest(self):
-        r = scourXmlFile(FIXTURES_DIR + "/font-styles.svg").getElementsByTagNameNS(SVGNS, "rect")[0]
+        r = scour_xml_file(FIXTURES_DIR + "/font-styles.svg").getElementsByTagNameNS(SVGNS, "rect")[0]
         self.assertEqual(r.getAttribute("font-size"), "", "font-size not removed from rect")
 
 
 class CollapseStraightPathSegments(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(
+        doc = scour_xml_file(
             FIXTURES_DIR + "/collapse-straight-path-segments.svg", parse_args(["--disable-style-to-xml"])
         )
         paths = doc.getElementsByTagNameNS(SVGNS, "path")
@@ -1432,13 +1433,13 @@ class CollapseStraightPathSegments(unittest.TestCase):
 
 class ConvertStraightCurvesToLines(unittest.TestCase):
     def runTest(self):
-        p = scourXmlFile(FIXTURES_DIR + "/straight-curve.svg").getElementsByTagNameNS(SVGNS, "path")[0]
+        p = scour_xml_file(FIXTURES_DIR + "/straight-curve.svg").getElementsByTagNameNS(SVGNS, "path")[0]
         self.assertEqual(p.getAttribute("d"), "m10 10 40 40 40-40z", "Did not convert straight curves into lines")
 
 
 class RemoveUnnecessaryPolygonEndPoint(unittest.TestCase):
     def runTest(self):
-        p = scourXmlFile(FIXTURES_DIR + "/polygon.svg").getElementsByTagNameNS(SVGNS, "polygon")[0]
+        p = scour_xml_file(FIXTURES_DIR + "/polygon.svg").getElementsByTagNameNS(SVGNS, "polygon")[0]
         self.assertEqual(
             p.getAttribute("points"), "50 50 150 50 150 150 50 150", "Unnecessary polygon end point not removed"
         )
@@ -1446,25 +1447,25 @@ class RemoveUnnecessaryPolygonEndPoint(unittest.TestCase):
 
 class DoNotRemovePolgonLastPoint(unittest.TestCase):
     def runTest(self):
-        p = scourXmlFile(FIXTURES_DIR + "/polygon.svg").getElementsByTagNameNS(SVGNS, "polygon")[1]
+        p = scour_xml_file(FIXTURES_DIR + "/polygon.svg").getElementsByTagNameNS(SVGNS, "polygon")[1]
         self.assertEqual(p.getAttribute("points"), "200 50 300 50 300 150 200 150", "Last point of polygon removed")
 
 
 class ScourPolygonCoordsSciNo(unittest.TestCase):
     def runTest(self):
-        p = scourXmlFile(FIXTURES_DIR + "/polygon-coord.svg").getElementsByTagNameNS(SVGNS, "polygon")[0]
+        p = scour_xml_file(FIXTURES_DIR + "/polygon-coord.svg").getElementsByTagNameNS(SVGNS, "polygon")[0]
         self.assertEqual(p.getAttribute("points"), "1e4 50", "Polygon coordinates not scoured")
 
 
 class ScourPolylineCoordsSciNo(unittest.TestCase):
     def runTest(self):
-        p = scourXmlFile(FIXTURES_DIR + "/polyline-coord.svg").getElementsByTagNameNS(SVGNS, "polyline")[0]
+        p = scour_xml_file(FIXTURES_DIR + "/polyline-coord.svg").getElementsByTagNameNS(SVGNS, "polyline")[0]
         self.assertEqual(p.getAttribute("points"), "1e4 50", "Polyline coordinates not scoured")
 
 
 class ScourPolygonNegativeCoords(unittest.TestCase):
     def runTest(self):
-        p = scourXmlFile(FIXTURES_DIR + "/polygon-coord-neg.svg").getElementsByTagNameNS(SVGNS, "polygon")[0]
+        p = scour_xml_file(FIXTURES_DIR + "/polygon-coord-neg.svg").getElementsByTagNameNS(SVGNS, "polygon")[0]
         #  points="100,-100,100-100,100-100-100,-100-100,200" />
         self.assertEqual(
             p.getAttribute("points"),
@@ -1475,7 +1476,7 @@ class ScourPolygonNegativeCoords(unittest.TestCase):
 
 class ScourPolylineNegativeCoords(unittest.TestCase):
     def runTest(self):
-        p = scourXmlFile(FIXTURES_DIR + "/polyline-coord-neg.svg").getElementsByTagNameNS(SVGNS, "polyline")[0]
+        p = scour_xml_file(FIXTURES_DIR + "/polyline-coord-neg.svg").getElementsByTagNameNS(SVGNS, "polyline")[0]
         self.assertEqual(
             p.getAttribute("points"),
             "100 -100 100 -100 100 -100 -100 -100 -100 200",
@@ -1485,7 +1486,7 @@ class ScourPolylineNegativeCoords(unittest.TestCase):
 
 class ScourPolygonNegativeCoordFirst(unittest.TestCase):
     def runTest(self):
-        p = scourXmlFile(FIXTURES_DIR + "/polygon-coord-neg-first.svg").getElementsByTagNameNS(SVGNS, "polygon")[0]
+        p = scour_xml_file(FIXTURES_DIR + "/polygon-coord-neg-first.svg").getElementsByTagNameNS(SVGNS, "polygon")[0]
         #  points="-100,-100,100-100,100-100-100,-100-100,200" />
         self.assertEqual(
             p.getAttribute("points"),
@@ -1496,7 +1497,7 @@ class ScourPolygonNegativeCoordFirst(unittest.TestCase):
 
 class ScourPolylineNegativeCoordFirst(unittest.TestCase):
     def runTest(self):
-        p = scourXmlFile(FIXTURES_DIR + "/polyline-coord-neg-first.svg").getElementsByTagNameNS(SVGNS, "polyline")[0]
+        p = scour_xml_file(FIXTURES_DIR + "/polyline-coord-neg-first.svg").getElementsByTagNameNS(SVGNS, "polyline")[0]
         self.assertEqual(
             p.getAttribute("points"),
             "-100 -100 100 -100 100 -100 -100 -100 -100 200",
@@ -1506,7 +1507,7 @@ class ScourPolylineNegativeCoordFirst(unittest.TestCase):
 
 class DoNotRemoveGroupsWithIDsInDefs(unittest.TestCase):
     def runTest(self):
-        f = scourXmlFile(FIXTURES_DIR + "/important-groups-in-defs.svg")
+        f = scour_xml_file(FIXTURES_DIR + "/important-groups-in-defs.svg")
         self.assertEqual(
             len(f.getElementsByTagNameNS(SVGNS, "linearGradient")), 1, "Group in defs with id'ed element removed"
         )
@@ -1514,20 +1515,20 @@ class DoNotRemoveGroupsWithIDsInDefs(unittest.TestCase):
 
 class AlwaysKeepClosePathSegments(unittest.TestCase):
     def runTest(self):
-        p = scourXmlFile(FIXTURES_DIR + "/path-with-closepath.svg").getElementsByTagNameNS(SVGNS, "path")[0]
+        p = scour_xml_file(FIXTURES_DIR + "/path-with-closepath.svg").getElementsByTagNameNS(SVGNS, "path")[0]
         self.assertEqual(p.getAttribute("d"), "m10 10h100v100h-100z", "Path with closepath not preserved")
 
 
 class RemoveDuplicateLinearGradients(unittest.TestCase):
     def runTest(self):
-        svgdoc = scourXmlFile(FIXTURES_DIR + "/remove-duplicate-gradients.svg")
+        svgdoc = scour_xml_file(FIXTURES_DIR + "/remove-duplicate-gradients.svg")
         lingrads = svgdoc.getElementsByTagNameNS(SVGNS, "linearGradient")
         self.assertEqual(1, lingrads.length, "Duplicate linear gradient not removed")
 
 
 class RereferenceForLinearGradient(unittest.TestCase):
     def runTest(self):
-        svgdoc = scourXmlFile(FIXTURES_DIR + "/remove-duplicate-gradients.svg")
+        svgdoc = scour_xml_file(FIXTURES_DIR + "/remove-duplicate-gradients.svg")
         rects = svgdoc.getElementsByTagNameNS(SVGNS, "rect")
         self.assertEqual(
             rects[0].getAttribute("fill"),
@@ -1543,14 +1544,14 @@ class RereferenceForLinearGradient(unittest.TestCase):
 
 class RemoveDuplicateRadialGradients(unittest.TestCase):
     def runTest(self):
-        svgdoc = scourXmlFile(FIXTURES_DIR + "/remove-duplicate-gradients.svg")
+        svgdoc = scour_xml_file(FIXTURES_DIR + "/remove-duplicate-gradients.svg")
         radgrads = svgdoc.getElementsByTagNameNS(SVGNS, "radialGradient")
         self.assertEqual(1, radgrads.length, "Duplicate radial gradient not removed")
 
 
 class RemoveDuplicateRadialGradientsEnsureMasterHasID(unittest.TestCase):
     def runTest(self):
-        svgdoc = scourXmlFile(FIXTURES_DIR + "/remove-duplicate-gradients-master-without-id.svg")
+        svgdoc = scour_xml_file(FIXTURES_DIR + "/remove-duplicate-gradients-master-without-id.svg")
         lingrads = svgdoc.getElementsByTagNameNS(SVGNS, "linearGradient")
         rect = svgdoc.getElementById("r1")
         self.assertEqual(1, lingrads.length, "Duplicate linearGradient not removed")
@@ -1560,7 +1561,7 @@ class RemoveDuplicateRadialGradientsEnsureMasterHasID(unittest.TestCase):
 
 class RereferenceForRadialGradient(unittest.TestCase):
     def runTest(self):
-        svgdoc = scourXmlFile(FIXTURES_DIR + "/remove-duplicate-gradients.svg")
+        svgdoc = scour_xml_file(FIXTURES_DIR + "/remove-duplicate-gradients.svg")
         rects = svgdoc.getElementsByTagNameNS(SVGNS, "rect")
         self.assertEqual(
             rects[2].getAttribute("stroke"),
@@ -1571,7 +1572,7 @@ class RereferenceForRadialGradient(unittest.TestCase):
 
 class RereferenceForGradientWithFallback(unittest.TestCase):
     def runTest(self):
-        svgdoc = scourXmlFile(FIXTURES_DIR + "/remove-duplicate-gradients.svg")
+        svgdoc = scour_xml_file(FIXTURES_DIR + "/remove-duplicate-gradients.svg")
         rects = svgdoc.getElementsByTagNameNS(SVGNS, "rect")
         self.assertEqual(
             rects[0].getAttribute("fill") + " #fff",
@@ -1582,7 +1583,7 @@ class RereferenceForGradientWithFallback(unittest.TestCase):
 
 class CollapseSamePathPoints(unittest.TestCase):
     def runTest(self):
-        p = scourXmlFile(FIXTURES_DIR + "/collapse-same-path-points.svg").getElementsByTagNameNS(SVGNS, "path")[0]
+        p = scour_xml_file(FIXTURES_DIR + "/collapse-same-path-points.svg").getElementsByTagNameNS(SVGNS, "path")[0]
         self.assertEqual(
             p.getAttribute("d"),
             "m100 100 100.12 100.12c14.877 4.8766-15.123-5.1234 0 0z",
@@ -1592,7 +1593,7 @@ class CollapseSamePathPoints(unittest.TestCase):
 
 class ScourUnitlessLengths(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/scour-lengths.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/scour-lengths.svg")
         r = doc.getElementsByTagNameNS(SVGNS, "rect")[0]
         svg = doc.documentElement
         self.assertEqual(svg.getAttribute("x"), "1", "Did not scour x attribute of svg element with unitless number")
@@ -1604,7 +1605,7 @@ class ScourUnitlessLengths(unittest.TestCase):
 
 class ScourLengthsWithUnits(unittest.TestCase):
     def runTest(self):
-        r = scourXmlFile(FIXTURES_DIR + "/scour-lengths.svg").getElementsByTagNameNS(SVGNS, "rect")[1]
+        r = scour_xml_file(FIXTURES_DIR + "/scour-lengths.svg").getElementsByTagNameNS(SVGNS, "rect")[1]
         self.assertEqual(r.getAttribute("x"), "123.46px", "Did not scour x attribute with unit")
         self.assertEqual(r.getAttribute("y"), "35ex", "Did not scour y attribute with unit")
         self.assertEqual(r.getAttribute("width"), "300pt", "Did not scour width attribute with unit")
@@ -1613,7 +1614,7 @@ class ScourLengthsWithUnits(unittest.TestCase):
 
 class RemoveRedundantSvgNamespaceDeclaration(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/redundant-svg-namespace.svg").documentElement
+        doc = scour_xml_file(FIXTURES_DIR + "/redundant-svg-namespace.svg").documentElement
         self.assertNotEqual(
             doc.getAttribute("xmlns:svg"),
             "http://www.w3.org/2000/svg",
@@ -1623,7 +1624,7 @@ class RemoveRedundantSvgNamespaceDeclaration(unittest.TestCase):
 
 class RemoveRedundantSvgNamespacePrefix(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/redundant-svg-namespace.svg").documentElement
+        doc = scour_xml_file(FIXTURES_DIR + "/redundant-svg-namespace.svg").documentElement
         r = doc.getElementsByTagNameNS(SVGNS, "rect")[1]
         self.assertEqual(r.tagName, "rect", "Redundant svg: prefix not removed from rect")
         t = doc.getElementsByTagNameNS(SVGNS, "text")[0]
@@ -1636,19 +1637,19 @@ class RemoveRedundantSvgNamespacePrefix(unittest.TestCase):
 
 class RemoveDefaultGradX1Value(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad1")
+        g = scour_xml_file(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad1")
         self.assertEqual(g.getAttribute("x1"), "", 'x1="0" not removed')
 
 
 class RemoveDefaultGradY1Value(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad1")
+        g = scour_xml_file(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad1")
         self.assertEqual(g.getAttribute("y1"), "", 'y1="0" not removed')
 
 
 class RemoveDefaultGradX2Value(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/gradient-default-attrs.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/gradient-default-attrs.svg")
         self.assertEqual(doc.getElementById("grad1").getAttribute("x2"), "", 'x2="100%" not removed')
         self.assertEqual(
             doc.getElementById("grad1b").getAttribute("x2"),
@@ -1664,49 +1665,49 @@ class RemoveDefaultGradX2Value(unittest.TestCase):
 
 class RemoveDefaultGradY2Value(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad1")
+        g = scour_xml_file(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad1")
         self.assertEqual(g.getAttribute("y2"), "", 'y2="0" not removed')
 
 
 class RemoveDefaultGradGradientUnitsValue(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad1")
+        g = scour_xml_file(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad1")
         self.assertEqual(g.getAttribute("gradientUnits"), "", 'gradientUnits="objectBoundingBox" not removed')
 
 
 class RemoveDefaultGradSpreadMethodValue(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad1")
+        g = scour_xml_file(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad1")
         self.assertEqual(g.getAttribute("spreadMethod"), "", 'spreadMethod="pad" not removed')
 
 
 class RemoveDefaultGradCXValue(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad2")
+        g = scour_xml_file(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad2")
         self.assertEqual(g.getAttribute("cx"), "", 'cx="50%" not removed')
 
 
 class RemoveDefaultGradCYValue(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad2")
+        g = scour_xml_file(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad2")
         self.assertEqual(g.getAttribute("cy"), "", 'cy="50%" not removed')
 
 
 class RemoveDefaultGradRValue(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad2")
+        g = scour_xml_file(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad2")
         self.assertEqual(g.getAttribute("r"), "", 'r="50%" not removed')
 
 
 class RemoveDefaultGradFXValue(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad2")
+        g = scour_xml_file(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad2")
         self.assertEqual(g.getAttribute("fx"), "", "fx matching cx not removed")
 
 
 class RemoveDefaultGradFYValue(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad2")
+        g = scour_xml_file(FIXTURES_DIR + "/gradient-default-attrs.svg").getElementById("grad2")
         self.assertEqual(g.getAttribute("fy"), "", "fy matching cy not removed")
 
 
@@ -1714,7 +1715,7 @@ class RemoveDefaultAttributeOrderSVGLengthCrash(unittest.TestCase):
     # Triggered a crash in v0.36
     def runTest(self):
         try:
-            scourXmlFile(FIXTURES_DIR + "/remove-default-attr-order.svg")
+            scour_xml_file(FIXTURES_DIR + "/remove-default-attr-order.svg")
         except AttributeError:
             self.fail("Processing the order attribute triggered an AttributeError")
 
@@ -1723,7 +1724,7 @@ class RemoveDefaultAttributeStdDeviationSVGLengthCrash(unittest.TestCase):
     # Triggered a crash in v0.36
     def runTest(self):
         try:
-            scourXmlFile(FIXTURES_DIR + "/remove-default-attr-std-deviation.svg")
+            scour_xml_file(FIXTURES_DIR + "/remove-default-attr-std-deviation.svg")
         except AttributeError:
             self.fail("Processing the order attribute triggered an AttributeError")
 
@@ -1731,35 +1732,35 @@ class RemoveDefaultAttributeStdDeviationSVGLengthCrash(unittest.TestCase):
 class CDATAInXml(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/cdata.svg") as f:
-            lines = scourString(f.read()).splitlines()
+            lines = scour_string(f.read()).splitlines()
         self.assertEqual(lines[3], "  	alert('pb&j');", "CDATA did not come out correctly")
 
 
 class WellFormedXMLLesserThanInAttrValue(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/xml-well-formed.svg") as f:
-            wellformed = scourString(f.read())
+            wellformed = scour_string(f.read())
         self.assertTrue(wellformed.find('unicode="&lt;"') != -1, "Improperly serialized &lt; in attribute value")
 
 
 class WellFormedXMLAmpersandInAttrValue(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/xml-well-formed.svg") as f:
-            wellformed = scourString(f.read())
+            wellformed = scour_string(f.read())
         self.assertTrue(wellformed.find('unicode="&amp;"') != -1, "Improperly serialized &amp; in attribute value")
 
 
 class WellFormedXMLLesserThanInTextContent(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/xml-well-formed.svg") as f:
-            wellformed = scourString(f.read())
+            wellformed = scour_string(f.read())
         self.assertTrue(wellformed.find("<title>2 &lt; 5</title>") != -1, "Improperly serialized &lt; in text content")
 
 
 class WellFormedXMLAmpersandInTextContent(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/xml-well-formed.svg") as f:
-            wellformed = scourString(f.read())
+            wellformed = scour_string(f.read())
         self.assertTrue(
             wellformed.find("<desc>Peanut Butter &amp; Jelly</desc>") != -1,
             "Improperly serialized &amp; in text content",
@@ -1769,7 +1770,7 @@ class WellFormedXMLAmpersandInTextContent(unittest.TestCase):
 class WellFormedXMLNamespacePrefixRemoveUnused(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/xml-well-formed.svg") as f:
-            wellformed = scourString(f.read())
+            wellformed = scour_string(f.read())
         self.assertTrue(
             wellformed.find("xmlns:foo=") == -1,
             "Improperly serialized namespace prefix declarations: Unused namespace decaration not removed",
@@ -1779,7 +1780,7 @@ class WellFormedXMLNamespacePrefixRemoveUnused(unittest.TestCase):
 class WellFormedXMLNamespacePrefixKeepUsedElementPrefix(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/xml-well-formed.svg") as f:
-            wellformed = scourString(f.read())
+            wellformed = scour_string(f.read())
         self.assertTrue(
             wellformed.find("xmlns:bar=") != -1,
             "Improperly serialized namespace prefix declarations: Used element prefix removed",
@@ -1789,7 +1790,7 @@ class WellFormedXMLNamespacePrefixKeepUsedElementPrefix(unittest.TestCase):
 class WellFormedXMLNamespacePrefixKeepUsedAttributePrefix(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/xml-well-formed.svg") as f:
-            wellformed = scourString(f.read())
+            wellformed = scour_string(f.read())
         self.assertTrue(
             wellformed.find("xmlns:baz=") != -1,
             "Improperly serialized namespace prefix declarations: Used attribute prefix removed",
@@ -1799,7 +1800,7 @@ class WellFormedXMLNamespacePrefixKeepUsedAttributePrefix(unittest.TestCase):
 class NamespaceDeclPrefixesInXMLWhenNotInDefaultNamespace(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/xml-ns-decl.svg") as f:
-            xmlstring = scourString(f.read())
+            xmlstring = scour_string(f.read())
         self.assertTrue(
             xmlstring.find('xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"') != -1,
             "Improperly serialized namespace prefix declarations when not in default namespace",
@@ -1809,27 +1810,27 @@ class NamespaceDeclPrefixesInXMLWhenNotInDefaultNamespace(unittest.TestCase):
 class MoveSVGElementsToDefaultNamespace(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/xml-ns-decl.svg") as f:
-            xmlstring = scourString(f.read())
+            xmlstring = scour_string(f.read())
         self.assertTrue(xmlstring.find("<rect ") != -1, "Did not bring SVG elements into the default namespace")
 
 
 class MoveCommonAttributesToParent(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/move-common-attributes-to-parent.svg").getElementsByTagNameNS(SVGNS, "g")[0]
+        g = scour_xml_file(FIXTURES_DIR + "/move-common-attributes-to-parent.svg").getElementsByTagNameNS(SVGNS, "g")[0]
         self.assertEqual(g.getAttribute("fill"), "#0F0", "Did not move common fill attribute to parent group")
 
 
 class RemoveCommonAttributesFromChild(unittest.TestCase):
     def runTest(self):
-        r = scourXmlFile(FIXTURES_DIR + "/move-common-attributes-to-parent.svg").getElementsByTagNameNS(SVGNS, "rect")[
-            0
-        ]
+        r = scour_xml_file(FIXTURES_DIR + "/move-common-attributes-to-parent.svg").getElementsByTagNameNS(
+            SVGNS, "rect"
+        )[0]
         self.assertNotEqual(r.getAttribute("fill"), "#0F0", "Did not remove common fill attribute from child")
 
 
 class DontRemoveCommonAttributesIfParentHasTextNodes(unittest.TestCase):
     def runTest(self):
-        text = scourXmlFile(FIXTURES_DIR + "/move-common-attributes-to-parent.svg").getElementsByTagNameNS(
+        text = scour_xml_file(FIXTURES_DIR + "/move-common-attributes-to-parent.svg").getElementsByTagNameNS(
             SVGNS, "text"
         )[0]
         self.assertNotEqual(
@@ -1839,7 +1840,7 @@ class DontRemoveCommonAttributesIfParentHasTextNodes(unittest.TestCase):
 
 class PropagateCommonAttributesUp(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/move-common-attributes-to-grandparent.svg").getElementsByTagNameNS(
+        g = scour_xml_file(FIXTURES_DIR + "/move-common-attributes-to-grandparent.svg").getElementsByTagNameNS(
             SVGNS, "g"
         )[0]
         self.assertEqual(g.getAttribute("fill"), "#0F0", "Did not move common fill attribute to grandparent")
@@ -1847,25 +1848,29 @@ class PropagateCommonAttributesUp(unittest.TestCase):
 
 class RemoveUnusedAttributesOnParent(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/remove-unused-attributes-on-parent.svg").getElementsByTagNameNS(SVGNS, "g")[0]
+        g = scour_xml_file(FIXTURES_DIR + "/remove-unused-attributes-on-parent.svg").getElementsByTagNameNS(SVGNS, "g")[
+            0
+        ]
         self.assertNotEqual(g.getAttribute("stroke"), "#000", "Unused attributes on group not removed")
 
 
 class DoNotRemoveCommonAttributesOnParentIfAtLeastOneUsed(unittest.TestCase):
     def runTest(self):
-        g = scourXmlFile(FIXTURES_DIR + "/remove-unused-attributes-on-parent.svg").getElementsByTagNameNS(SVGNS, "g")[0]
+        g = scour_xml_file(FIXTURES_DIR + "/remove-unused-attributes-on-parent.svg").getElementsByTagNameNS(SVGNS, "g")[
+            0
+        ]
         self.assertEqual(g.getAttribute("fill"), "#0F0", "Used attributes on group were removed")
 
 
 class DoNotRemoveGradientsWhenReferencedInStyleCss(unittest.TestCase):
     def runTest(self):
-        grads = scourXmlFile(FIXTURES_DIR + "/css-reference.svg").getElementsByTagNameNS(SVGNS, "linearGradient")
+        grads = scour_xml_file(FIXTURES_DIR + "/css-reference.svg").getElementsByTagNameNS(SVGNS, "linearGradient")
         self.assertEqual(grads.length, 2, "Gradients removed when referenced in CSS")
 
 
 class Whitespace(unittest.TestCase):
     def setUp(self):
-        self.doc = scourXmlFile(FIXTURES_DIR + "/whitespace.svg")
+        self.doc = scour_xml_file(FIXTURES_DIR + "/whitespace.svg")
 
     def test_basic(self):
         text = self.doc.getElementById("txt_a1")
@@ -1962,9 +1967,9 @@ class Whitespace(unittest.TestCase):
 
 class GetAttrPrefixRight(unittest.TestCase):
     def runTest(self):
-        grad = scourXmlFile(FIXTURES_DIR + "/xml-namespace-attrs.svg").getElementsByTagNameNS(SVGNS, "linearGradient")[
-            1
-        ]
+        grad = scour_xml_file(FIXTURES_DIR + "/xml-namespace-attrs.svg").getElementsByTagNameNS(
+            SVGNS, "linearGradient"
+        )[1]
         self.assertEqual(
             grad.getAttributeNS("http://www.w3.org/1999/xlink", "href"),
             "#linearGradient841",
@@ -1975,7 +1980,7 @@ class GetAttrPrefixRight(unittest.TestCase):
 class EnsurePreserveWhitespaceOnNonTextElements(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/no-collapse-lines.svg") as f:
-            s = scourString(f.read())
+            s = scour_string(f.read())
         self.assertEqual(
             len(s.splitlines()), 6, "Did not properly preserve whitespace on elements even if they were not textual"
         )
@@ -1984,7 +1989,7 @@ class EnsurePreserveWhitespaceOnNonTextElements(unittest.TestCase):
 class HandleEmptyStyleElement(unittest.TestCase):
     def runTest(self):
         try:
-            styles = scourXmlFile(FIXTURES_DIR + "/empty-style.svg").getElementsByTagNameNS(SVGNS, "style")
+            styles = scour_xml_file(FIXTURES_DIR + "/empty-style.svg").getElementsByTagNameNS(SVGNS, "style")
             fail = len(styles) != 1
         except AttributeError:
             fail = True
@@ -1994,7 +1999,7 @@ class HandleEmptyStyleElement(unittest.TestCase):
 class EnsureLineEndings(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/newlines.svg") as f:
-            s = scourString(f.read())
+            s = scour_string(f.read())
         self.assertEqual(len(s.splitlines()), 24, "Did handle reading or outputting line ending characters correctly")
 
 
@@ -2033,7 +2038,7 @@ class XmlEntities(unittest.TestCase):
 class HandleQuotesInAttributes(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/entities.svg", "rb") as f:
-            output = scourString(f.read())
+            output = scour_string(f.read())
         self.assertTrue('a="\'"' in output, "Failed on attribute value with non-double quote")
         self.assertTrue("b='\"'" in output, "Failed on attribute value with non-single quote")
         self.assertTrue(
@@ -2051,14 +2056,14 @@ class HandleQuotesInAttributes(unittest.TestCase):
 class PreserveQuotesInStyles(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/quotes-in-styles.svg", "rb") as f:
-            output = scourString(f.read())
+            output = scour_string(f.read())
         self.assertTrue('use[id="t"]' in output, "Failed to preserve quote characters in a style element")
         self.assertTrue("'Times New Roman'" in output, "Failed to preserve quote characters in a style attribute")
 
 
 class DoNotStripCommentsOutsideOfRoot(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/comments.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/comments.svg")
         self.assertEqual(doc.childNodes.length, 4, "Did not include all comment children outside of root")
         self.assertEqual(doc.childNodes[0].nodeType, 8, "First node not a comment")
         self.assertEqual(doc.childNodes[1].nodeType, 8, "Second node not a comment")
@@ -2067,7 +2072,17 @@ class DoNotStripCommentsOutsideOfRoot(unittest.TestCase):
 
 class DoNotStripDoctype(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/doctype.svg")
+        # doctype.svg uses entity definitions (the billion-laughs vector).
+        # Secure-by-default rejects them; this fixture requires opt-in.
+        import warnings
+
+        from svg_polish.optimizer import SecurityWarning
+
+        opts = generate_default_options()
+        opts.allow_xml_entities = True
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", SecurityWarning)
+            doc = scour_xml_file(FIXTURES_DIR + "/doctype.svg", options=opts)
         self.assertEqual(doc.childNodes.length, 3, "Did not include the DOCROOT")
         self.assertEqual(doc.childNodes[0].nodeType, 8, "First node not a comment")
         self.assertEqual(doc.childNodes[1].nodeType, 10, "Second node not a doctype")
@@ -2076,7 +2091,7 @@ class DoNotStripDoctype(unittest.TestCase):
 
 class PathImplicitLineWithMoveCommands(unittest.TestCase):
     def runTest(self):
-        path = scourXmlFile(FIXTURES_DIR + "/path-implicit-line.svg").getElementsByTagNameNS(SVGNS, "path")[0]
+        path = scour_xml_file(FIXTURES_DIR + "/path-implicit-line.svg").getElementsByTagNameNS(SVGNS, "path")[0]
         self.assertEqual(
             path.getAttribute("d"),
             "m100 100v100m200-100h-200m200 100v-100",
@@ -2086,25 +2101,25 @@ class PathImplicitLineWithMoveCommands(unittest.TestCase):
 
 class RemoveTitlesOption(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/full-descriptive-elements.svg", parse_args(["--remove-titles"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/full-descriptive-elements.svg", parse_args(["--remove-titles"]))
         self.assertEqual(doc.childNodes.length, 1, "Did not remove <title> tag with --remove-titles")
 
 
 class RemoveDescriptionsOption(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/full-descriptive-elements.svg", parse_args(["--remove-descriptions"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/full-descriptive-elements.svg", parse_args(["--remove-descriptions"]))
         self.assertEqual(doc.childNodes.length, 1, "Did not remove <desc> tag with --remove-descriptions")
 
 
 class RemoveMetadataOption(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/full-descriptive-elements.svg", parse_args(["--remove-metadata"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/full-descriptive-elements.svg", parse_args(["--remove-metadata"]))
         self.assertEqual(doc.childNodes.length, 1, "Did not remove <metadata> tag with --remove-metadata")
 
 
 class RemoveDescriptiveElementsOption(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(
+        doc = scour_xml_file(
             FIXTURES_DIR + "/full-descriptive-elements.svg", parse_args(["--remove-descriptive-elements"])
         )
         self.assertEqual(
@@ -2118,7 +2133,7 @@ class EnableCommentStrippingOption(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/comment-beside-xml-decl.svg") as f:
             docStr = f.read()
-        docStr = scourString(docStr, parse_args(["--enable-comment-stripping"]))
+        docStr = scour_string(docStr, parse_args(["--enable-comment-stripping"]))
         self.assertEqual(
             docStr.find("<!--"), -1, "Did not remove document-level comment with --enable-comment-stripping"
         )
@@ -2128,13 +2143,13 @@ class StripXmlPrologOption(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/comment-beside-xml-decl.svg") as f:
             docStr = f.read()
-        docStr = scourString(docStr, parse_args(["--strip-xml-prolog"]))
+        docStr = scour_string(docStr, parse_args(["--strip-xml-prolog"]))
         self.assertEqual(docStr.find("<?xml"), -1, "Did not remove <?xml?> with --strip-xml-prolog")
 
 
 class ShortenIDsOption(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/shorten-ids.svg", parse_args(["--shorten-ids"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/shorten-ids.svg", parse_args(["--shorten-ids"]))
         gradientTag = doc.getElementsByTagName("linearGradient")[0]
         self.assertEqual(
             gradientTag.getAttribute("id"), "a", "Did not shorten a linear gradient's ID with --shorten-ids"
@@ -2145,7 +2160,7 @@ class ShortenIDsOption(unittest.TestCase):
 
 class ShortenIDsStableOutput(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/shorten-ids-stable-output.svg", parse_args(["--shorten-ids"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/shorten-ids-stable-output.svg", parse_args(["--shorten-ids"]))
         use_tags = doc.getElementsByTagName("use")
         hrefs_ordered = [x.getAttributeNS("http://www.w3.org/1999/xlink", "href") for x in use_tags]
         expected = ["#a", "#b", "#b"]
@@ -2154,35 +2169,35 @@ class ShortenIDsStableOutput(unittest.TestCase):
 
 class MustKeepGInSwitch(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/groups-in-switch.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/groups-in-switch.svg")
         self.assertEqual(doc.getElementsByTagName("g").length, 1, "Erroneously removed a <g> in a <switch>")
 
 
 class MustKeepGInSwitch2(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/groups-in-switch-with-id.svg", parse_args(["--enable-id-stripping"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/groups-in-switch-with-id.svg", parse_args(["--enable-id-stripping"]))
         self.assertEqual(doc.getElementsByTagName("g").length, 1, "Erroneously removed a <g> in a <switch>")
 
 
 class GroupSiblingMerge(unittest.TestCase):
     def test_sibling_merge(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/group-sibling-merge.svg", parse_args([]))
+        doc = scour_xml_file(FIXTURES_DIR + "/group-sibling-merge.svg", parse_args([]))
         self.assertEqual(doc.getElementsByTagName("g").length, 5, "Merged sibling <g> tags with similar values")
 
     def test_sibling_merge_disabled(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/group-sibling-merge.svg", parse_args(["--disable-group-collapsing"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/group-sibling-merge.svg", parse_args(["--disable-group-collapsing"]))
         self.assertEqual(
             doc.getElementsByTagName("g").length, 8, "Sibling merging is disabled by --disable-group-collapsing"
         )
 
     def test_sibling_merge_crash(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/group-sibling-merge-crash.svg", parse_args([""]))
+        doc = scour_xml_file(FIXTURES_DIR + "/group-sibling-merge-crash.svg", parse_args([""]))
         self.assertEqual(doc.getElementsByTagName("g").length, 1, "Sibling merge should work without causing crashes")
 
 
 class GroupCreation(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/group-creation.svg", parse_args(["--create-groups"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/group-creation.svg", parse_args(["--create-groups"]))
         self.assertEqual(
             doc.getElementsByTagName("g").length,
             1,
@@ -2192,7 +2207,7 @@ class GroupCreation(unittest.TestCase):
 
 class GroupCreationForInheritableAttributesOnly(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/group-creation.svg", parse_args(["--create-groups"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/group-creation.svg", parse_args(["--create-groups"]))
         self.assertEqual(
             doc.getElementsByTagName("g").item(0).getAttribute("y"),
             "",
@@ -2202,7 +2217,7 @@ class GroupCreationForInheritableAttributesOnly(unittest.TestCase):
 
 class GroupNoCreation(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/group-no-creation.svg", parse_args(["--create-groups"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/group-no-creation.svg", parse_args(["--create-groups"]))
         self.assertEqual(
             doc.getElementsByTagName("g").length, 0, "Created a <g> for a run of elements having dissimilar attributes"
         )
@@ -2210,7 +2225,7 @@ class GroupNoCreation(unittest.TestCase):
 
 class GroupNoCreationForTspan(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/group-no-creation-tspan.svg", parse_args(["--create-groups"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/group-no-creation-tspan.svg", parse_args(["--create-groups"]))
         self.assertEqual(
             doc.getElementsByTagName("g").length,
             0,
@@ -2220,7 +2235,7 @@ class GroupNoCreationForTspan(unittest.TestCase):
 
 class DoNotCommonizeAttributesOnReferencedElements(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/commonized-referenced-elements.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/commonized-referenced-elements.svg")
         self.assertEqual(
             doc.getElementsByTagName("circle")[0].getAttribute("fill"),
             "#0f0",
@@ -2230,7 +2245,7 @@ class DoNotCommonizeAttributesOnReferencedElements(unittest.TestCase):
 
 class DoNotRemoveOverflowVisibleOnMarker(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/overflow-marker.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/overflow-marker.svg")
         self.assertEqual(
             doc.getElementById("m1").getAttribute("overflow"),
             "visible",
@@ -2245,7 +2260,7 @@ class DoNotRemoveOverflowVisibleOnMarker(unittest.TestCase):
 
 class DoNotRemoveOrientAutoOnMarker(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/orient-marker.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/orient-marker.svg")
         self.assertEqual(
             doc.getElementById("m1").getAttribute("orient"),
             "auto",
@@ -2260,7 +2275,7 @@ class DoNotRemoveOrientAutoOnMarker(unittest.TestCase):
 
 class MarkerOnSvgElements(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/overflow-svg.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/overflow-svg.svg")
         self.assertEqual(
             doc.getElementsByTagName("svg")[0].getAttribute("overflow"),
             "",
@@ -2280,7 +2295,7 @@ class MarkerOnSvgElements(unittest.TestCase):
 
 class GradientReferencedByStyleCDATA(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/style-cdata.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/style-cdata.svg")
         self.assertEqual(
             len(doc.getElementsByTagName("linearGradient")),
             1,
@@ -2292,13 +2307,13 @@ class ShortenIDsInStyleCDATA(unittest.TestCase):
     def runTest(self):
         with open(FIXTURES_DIR + "/style-cdata.svg") as f:
             docStr = f.read()
-        docStr = scourString(docStr, parse_args(["--shorten-ids"]))
+        docStr = scour_string(docStr, parse_args(["--shorten-ids"]))
         self.assertEqual(docStr.find("somethingreallylong"), -1, "Did not shorten IDs in the internal stylesheet")
 
 
 class StyleToAttr(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/style-to-attr.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/style-to-attr.svg")
         line = doc.getElementsByTagName("line")[0]
         self.assertEqual(line.getAttribute("stroke"), "#000")
         self.assertEqual(line.getAttribute("marker-start"), "url(#m)")
@@ -2308,7 +2323,7 @@ class StyleToAttr(unittest.TestCase):
 
 class PathCommandRewrites(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/path-command-rewrites.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/path-command-rewrites.svg")
         paths = doc.getElementsByTagName("path")
         expected_paths = [
             ("m100 100 200 100", "Trailing m0 0z not removed"),
@@ -2326,7 +2341,7 @@ class PathCommandRewrites(unittest.TestCase):
 
 class DefaultsRemovalToplevel(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
         self.assertEqual(
             doc.getElementsByTagName("path")[1].getAttribute("fill-rule"),
             "",
@@ -2336,7 +2351,7 @@ class DefaultsRemovalToplevel(unittest.TestCase):
 
 class DefaultsRemovalToplevelInverse(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
         self.assertEqual(
             doc.getElementsByTagName("path")[0].getAttribute("fill-rule"),
             "evenodd",
@@ -2346,7 +2361,7 @@ class DefaultsRemovalToplevelInverse(unittest.TestCase):
 
 class DefaultsRemovalToplevelFormat(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
         self.assertEqual(
             doc.getElementsByTagName("path")[0].getAttribute("stroke-width"),
             "",
@@ -2356,7 +2371,7 @@ class DefaultsRemovalToplevelFormat(unittest.TestCase):
 
 class DefaultsRemovalInherited(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
         self.assertEqual(
             doc.getElementsByTagName("path")[3].getAttribute("fill-rule"),
             "",
@@ -2366,7 +2381,7 @@ class DefaultsRemovalInherited(unittest.TestCase):
 
 class DefaultsRemovalInheritedInverse(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
         self.assertEqual(
             doc.getElementsByTagName("path")[2].getAttribute("fill-rule"),
             "evenodd",
@@ -2376,7 +2391,7 @@ class DefaultsRemovalInheritedInverse(unittest.TestCase):
 
 class DefaultsRemovalInheritedFormat(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
         self.assertEqual(
             doc.getElementsByTagName("path")[2].getAttribute("stroke-width"),
             "",
@@ -2386,7 +2401,7 @@ class DefaultsRemovalInheritedFormat(unittest.TestCase):
 
 class DefaultsRemovalOverwrite(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
         self.assertEqual(
             doc.getElementsByTagName("path")[5].getAttribute("fill-rule"),
             "nonzero",
@@ -2396,7 +2411,7 @@ class DefaultsRemovalOverwrite(unittest.TestCase):
 
 class DefaultsRemovalOverwriteMarker(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
         self.assertEqual(
             doc.getElementsByTagName("path")[4].getAttribute("marker-start"),
             "none",
@@ -2406,7 +2421,7 @@ class DefaultsRemovalOverwriteMarker(unittest.TestCase):
 
 class DefaultsRemovalNonOverwrite(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/cascading-default-attribute-removal.svg")
         self.assertEqual(
             doc.getElementsByTagName("path")[10].getAttribute("fill-rule"),
             "",
@@ -2416,7 +2431,7 @@ class DefaultsRemovalNonOverwrite(unittest.TestCase):
 
 class RemoveDefsWithUnreferencedElements(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/useless-defs.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/useless-defs.svg")
         self.assertEqual(
             doc.getElementsByTagName("defs").length, 0, "Kept defs, although it contains only unreferenced elements"
         )
@@ -2424,7 +2439,7 @@ class RemoveDefsWithUnreferencedElements(unittest.TestCase):
 
 class RemoveDefsWithWhitespace(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/whitespace-defs.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/whitespace-defs.svg")
         self.assertEqual(
             doc.getElementsByTagName("defs").length, 0, "Kept defs, although it contains only whitespace or is <defs/>"
         )
@@ -2432,7 +2447,7 @@ class RemoveDefsWithWhitespace(unittest.TestCase):
 
 class TransformIdentityMatrix(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-matrix-is-identity.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-matrix-is-identity.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "",
@@ -2442,7 +2457,7 @@ class TransformIdentityMatrix(unittest.TestCase):
 
 class TransformRotate135(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-matrix-is-rotate-135.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-matrix-is-rotate-135.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "rotate(135)",
@@ -2452,7 +2467,7 @@ class TransformRotate135(unittest.TestCase):
 
 class TransformRotate45(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-matrix-is-rotate-45.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-matrix-is-rotate-45.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "rotate(45)",
@@ -2462,7 +2477,7 @@ class TransformRotate45(unittest.TestCase):
 
 class TransformRotate90(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-matrix-is-rotate-90.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-matrix-is-rotate-90.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "rotate(90)",
@@ -2472,7 +2487,7 @@ class TransformRotate90(unittest.TestCase):
 
 class TransformRotateCCW135(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-matrix-is-rotate-225.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-matrix-is-rotate-225.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "rotate(225)",
@@ -2482,7 +2497,7 @@ class TransformRotateCCW135(unittest.TestCase):
 
 class TransformRotateCCW45(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-matrix-is-rotate-neg-45.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-matrix-is-rotate-neg-45.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "rotate(-45)",
@@ -2492,7 +2507,7 @@ class TransformRotateCCW45(unittest.TestCase):
 
 class TransformRotateCCW90(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-matrix-is-rotate-neg-90.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-matrix-is-rotate-neg-90.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "rotate(-90)",
@@ -2502,7 +2517,7 @@ class TransformRotateCCW90(unittest.TestCase):
 
 class TransformScale2by3(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-matrix-is-scale-2-3.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-matrix-is-scale-2-3.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "scale(2 3)",
@@ -2512,7 +2527,7 @@ class TransformScale2by3(unittest.TestCase):
 
 class TransformScaleMinus1(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-matrix-is-scale-neg-1.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-matrix-is-scale-neg-1.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "scale(-1)",
@@ -2522,7 +2537,7 @@ class TransformScaleMinus1(unittest.TestCase):
 
 class TransformTranslate(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-matrix-is-translate.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-matrix-is-translate.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "translate(2 3)",
@@ -2532,7 +2547,7 @@ class TransformTranslate(unittest.TestCase):
 
 class TransformRotationRange719_5(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-rotate-trim-range-719.5.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-rotate-trim-range-719.5.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "rotate(-.5)",
@@ -2542,7 +2557,7 @@ class TransformRotationRange719_5(unittest.TestCase):
 
 class TransformRotationRangeCCW540_0(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-rotate-trim-range-neg-540.0.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-rotate-trim-range-neg-540.0.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "rotate(180)",
@@ -2552,7 +2567,7 @@ class TransformRotationRangeCCW540_0(unittest.TestCase):
 
 class TransformRotation3Args(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-rotate-fold-3args.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-rotate-fold-3args.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "rotate(90)",
@@ -2562,7 +2577,7 @@ class TransformRotation3Args(unittest.TestCase):
 
 class TransformIdentityRotation(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-rotate-is-identity.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-rotate-is-identity.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "",
@@ -2572,7 +2587,7 @@ class TransformIdentityRotation(unittest.TestCase):
 
 class TransformIdentitySkewX(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-skewX-is-identity.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-skewX-is-identity.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "",
@@ -2582,7 +2597,7 @@ class TransformIdentitySkewX(unittest.TestCase):
 
 class TransformIdentitySkewY(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-skewY-is-identity.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-skewY-is-identity.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "",
@@ -2592,7 +2607,7 @@ class TransformIdentitySkewY(unittest.TestCase):
 
 class TransformIdentityTranslate(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/transform-translate-is-identity.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/transform-translate-is-identity.svg")
         self.assertEqual(
             doc.getElementsByTagName("line")[0].getAttribute("transform"),
             "",
@@ -2603,7 +2618,7 @@ class TransformIdentityTranslate(unittest.TestCase):
 class TransformIdentityScale(unittest.TestCase):
     def runTest(self):
         try:
-            doc = scourXmlFile(FIXTURES_DIR + "/transform-scale-is-identity.svg")
+            doc = scour_xml_file(FIXTURES_DIR + "/transform-scale-is-identity.svg")
         except IndexError:
             self.fail("scour failed to handled scale(1) [See GH#190]")
         self.assertEqual(
@@ -2615,7 +2630,7 @@ class TransformIdentityScale(unittest.TestCase):
 
 class DuplicateGradientsUpdateStyle(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(
+        doc = scour_xml_file(
             FIXTURES_DIR + "/duplicate-gradients-update-style.svg", parse_args(["--disable-style-to-xml"])
         )
         gradient = doc.getElementsByTagName("linearGradient")[0]
@@ -2641,20 +2656,20 @@ class DuplicateGradientsUpdateStyle(unittest.TestCase):
 class DocWithFlowtext(unittest.TestCase):
     def runTest(self):
         with self.assertRaises(Exception):
-            scourXmlFile(FIXTURES_DIR + "/flowtext.svg", parse_args(["--error-on-flowtext"]))
+            scour_xml_file(FIXTURES_DIR + "/flowtext.svg", parse_args(["--error-on-flowtext"]))
 
 
 class DocWithNoFlowtext(unittest.TestCase):
     def runTest(self):
         try:
-            scourXmlFile(FIXTURES_DIR + "/flowtext-less.svg", parse_args(["--error-on-flowtext"]))
+            scour_xml_file(FIXTURES_DIR + "/flowtext-less.svg", parse_args(["--error-on-flowtext"]))
         except Exception as e:
             self.fail("exception '{}' was raised, and we didn't expect that!".format(e))
 
 
 class ParseStyleAttribute(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/style.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/style.svg")
         self.assertEqual(
             doc.documentElement.getAttribute("style"),
             "property1:value1;property2:value2;property3:value3",
@@ -2664,7 +2679,7 @@ class ParseStyleAttribute(unittest.TestCase):
 
 class StripXmlSpaceAttribute(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/xml-space.svg", parse_args(["--strip-xml-space"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/xml-space.svg", parse_args(["--strip-xml-space"]))
         self.assertEqual(
             doc.documentElement.getAttribute("xml:space"),
             "",
@@ -2680,7 +2695,7 @@ class StripXmlSpaceAttribute(unittest.TestCase):
 
 class DoNotStripXmlSpaceAttribute(unittest.TestCase):
     def runTest(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/xml-space.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/xml-space.svg")
         self.assertNotEqual(
             doc.documentElement.getAttribute("xml:space"),
             "",
@@ -2863,7 +2878,7 @@ class EmbedRasters(unittest.TestCase):
         return os.system("ping " + ping_count + " 1 " + host + " > " + dev_null)
 
     def test_disable_embed_rasters(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/raster-formats.svg", parse_args(["--disable-embed-rasters"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/raster-formats.svg", parse_args(["--disable-embed-rasters"]))
         self.assertEqual(
             doc.getElementById("png").getAttribute("xlink:href"),
             "raster.png",
@@ -2871,7 +2886,7 @@ class EmbedRasters(unittest.TestCase):
         )
 
     def test_raster_formats(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/raster-formats.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/raster-formats.svg")
         self.assertEqual(
             doc.getElementById("png").getAttribute("xlink:href"),
             "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAABAgMAAABmjvwnAAAAC"
@@ -2895,7 +2910,7 @@ class EmbedRasters(unittest.TestCase):
         )
 
     def test_raster_paths_local(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/raster-paths-local.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/raster-paths-local.svg")
         images = doc.getElementsByTagName("image")
         for image in images:
             href = image.getAttribute("xlink:href")
@@ -2908,7 +2923,7 @@ class EmbedRasters(unittest.TestCase):
         # create a reference string by scouring the original file with relative links
         options = ScourOptions
         options.infilename = FIXTURES_DIR + "/raster-formats.svg"
-        reference_svg = scourString(svg, options)
+        reference_svg = scour_string(svg, options)
 
         # this will not always create formally valid paths but it'll check how robust our implementation is
         # (the third path is invalid for sure because file: needs three slashes according to URI spec)
@@ -2918,13 +2933,13 @@ class EmbedRasters(unittest.TestCase):
         )
         svg = svg.replace("raster.jpg", "file:/" + os.path.abspath(os.path.dirname(__file__)) + "/fixtures/raster.jpg")
 
-        svg = scourString(svg)
+        svg = scour_string(svg)
 
         self.assertEqual(svg, reference_svg, "Raster images from absolute local paths not properly embedded.")
 
     @unittest.skipIf(_ping("raw.githubusercontent.com") != 0, "Remote server not reachable.")
     def test_raster_paths_remote(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/raster-paths-remote.svg")
+        doc = scour_xml_file(FIXTURES_DIR + "/raster-paths-remote.svg")
         images = doc.getElementsByTagName("image")
         for image in images:
             href = image.getAttribute("xlink:href")
@@ -2935,12 +2950,12 @@ class EmbedRasters(unittest.TestCase):
 
 class ViewBox(unittest.TestCase):
     def test_viewbox_create(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/viewbox-create.svg", parse_args(["--enable-viewboxing"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/viewbox-create.svg", parse_args(["--enable-viewboxing"]))
         viewBox = doc.documentElement.getAttribute("viewBox")
         self.assertEqual(viewBox, "0 0 123.46 654.32", "viewBox not properly created with '--enable-viewboxing'.")
 
     def test_viewbox_remove_width_and_height(self):
-        doc = scourXmlFile(FIXTURES_DIR + "/viewbox-remove.svg", parse_args(["--enable-viewboxing"]))
+        doc = scour_xml_file(FIXTURES_DIR + "/viewbox-remove.svg", parse_args(["--enable-viewboxing"]))
         width = doc.documentElement.getAttribute("width")
         height = doc.documentElement.getAttribute("height")
         self.assertEqual(width, "", "width not removed with '--enable-viewboxing'.")

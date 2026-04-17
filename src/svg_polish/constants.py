@@ -44,7 +44,7 @@ COPYRIGHT = "Copyright Jeff Schiller, Louis Simard, 2010"
 
 # XML entity escape maps for make_well_formed().
 # Each map contains only the entities that need escaping for a given quote style.
-# Used by serializeXML() to escape attribute values and text content.
+# Used by serialize_xml() to escape attribute values and text content.
 XML_ENTS_NO_QUOTES: dict[str, str] = {"<": "&lt;", ">": "&gt;", "&": "&amp;"}
 XML_ENTS_ESCAPE_APOS: dict[str, str] = XML_ENTS_NO_QUOTES.copy()
 XML_ENTS_ESCAPE_APOS["'"] = "&apos;"
@@ -224,7 +224,7 @@ unwanted_ns: list[str] = [
 # =============================================================================
 
 # Complete set of SVG presentation attributes (CSS property names usable as XML attributes).
-# Stored as frozenset for O(1) membership testing in repairStyle() and style-to-XML conversion.
+# Stored as frozenset for O(1) membership testing in repair_style() and style-to-XML conversion.
 #
 # Sources:
 #     https://www.w3.org/TR/SVG/propidx.html              (SVG 1.1 — implemented)
@@ -316,7 +316,7 @@ svgAttributes: frozenset[str] = frozenset(
 # Named CSS/SVG colors mapped to their rgb() equivalents.
 # Key = lowercase color name (str), Value = "rgb(R, G, B)" string.
 # Source: https://www.w3.org/TR/SVG/types.html#ColorKeywords
-# Used by convertColor() as input; _name_to_hex (below) is the pre-computed hex form.
+# Used by convert_color() as input; _name_to_hex (below) is the pre-computed hex form.
 colors: dict[str, str] = {
     "aliceblue": "rgb(240, 248, 255)",
     "antiquewhite": "rgb(250, 235, 215)",
@@ -474,7 +474,7 @@ colors: dict[str, str] = {
 
 # Pre-computed name->shortest-hex mapping, built at import time from `colors` dict.
 # Key = lowercase color name (str), Value = shortest hex form (e.g. "#fff" or "#abcd").
-# Avoids regex parsing in the hot convertColor() path for all 148 named colors.
+# Avoids regex parsing in the hot convert_color() path for all 148 named colors.
 _name_to_hex: dict[str, str] = {}
 for _name, _rgb_str in colors.items():
     _m = rgb.match(_rgb_str)
@@ -495,7 +495,7 @@ for _name, _rgb_str in colors.items():
 # CSS/SVG default property values that can safely be removed from elements.
 # Key = property name (str), Value = default value (str).
 # Excludes all properties with 'auto' as default (too ambiguous to remove).
-# Used by removeDefaultAttributeValues() to strip redundant attributes/styles.
+# Used by remove_default_attribute_values() to strip redundant attributes/styles.
 #
 # Sources:
 #     https://www.w3.org/TR/SVG/propidx.html              (SVG 1.1)
@@ -567,7 +567,7 @@ default_properties: dict[str, str] = {  # excluded all properties with 'auto' as
 
 # SVG attributes that may contain url(#id) references to other elements.
 # Frozen for O(1) membership testing during DOM traversal.
-# Used by findReferencingProperty() and findReferencedElements().
+# Used by findReferencingProperty() and find_referenced_elements().
 referencingProps: frozenset[str] = frozenset(
     ["fill", "stroke", "filter", "clip-path", "mask", "marker-start", "marker-end", "marker-mid"]
 )
@@ -578,7 +578,7 @@ referencingProps: frozenset[str] = frozenset(
 # =============================================================================
 
 # SVG elements whose text content is significant (whitespace must be preserved).
-# Inside these elements, serializeXML() does not add indentation or strip whitespace.
+# Inside these elements, serialize_xml() does not add indentation or strip whitespace.
 # Source: https://www.w3.org/TR/SVG/text.html#WhiteSpace
 TEXT_CONTENT_ELEMENTS: frozenset[str] = frozenset(
     [
@@ -632,7 +632,7 @@ class DefaultAttribute(NamedTuple):
 
 
 # Table of SVG attributes with known default values that can be safely removed.
-# Used by removeDefaultAttributeValues() and removeDefaultAttributeValue().
+# Used by remove_default_attribute_values() and remove_default_attribute_value().
 # Each entry specifies: attribute name, default value, expected unit, applicable elements, and
 # optional conditions that must be met for the default to apply.
 default_attributes: list[DefaultAttribute] = [
@@ -866,7 +866,7 @@ default_attributes: list[DefaultAttribute] = [
     DefaultAttribute("yChannelSelector", "A", elements=["feDisplacementMap"]),
 ]
 
-# Pre-split lookup structures for removeDefaultAttributeValues().
+# Pre-split lookup structures for remove_default_attribute_values().
 # - universal: attributes valid for ALL elements (currently empty — no universal defaults defined).
 # - per_element: dict mapping element tag name (str) -> list[DefaultAttribute] for that element.
 default_attributes_universal: list[DefaultAttribute] = []

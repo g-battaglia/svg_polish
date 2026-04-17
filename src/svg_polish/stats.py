@@ -1,18 +1,23 @@
 """Statistics tracking for SVG optimization.
 
-This module defines :class:`ScourStats`, a lightweight counter object that
-tracks how many bytes, elements, attributes, and other items were saved or
-modified during an optimization run.  An instance is optionally passed to
-:func:`~svg_polish.optimizer.scourString` and populated in-place as each
+This module defines :class:`ScourStats`, a counter object that tracks how
+many bytes, elements, attributes, and other items were saved or modified
+during an optimization run. An instance is optionally passed to
+:func:`~svg_polish.optimizer.scour_string` and populated in-place as each
 optimization pass runs.
 
 The stats can be displayed to the user via the CLI ``--verbose`` flag or
-inspected programmatically after calling :func:`~svg_polish.optimize`.
+inspected programmatically after calling :func:`~svg_polish.optimize_with_stats`.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, fields
 
+__all__ = ["ScourStats"]
+
+
+@dataclass(slots=True)
 class ScourStats:
     """Tracks statistics about an SVG optimization pass.
 
@@ -58,81 +63,73 @@ class ScourStats:
         * :attr:`num_rasters_embedded` — Raster images that were base64-encoded
           and embedded inline (when the relevant option is enabled).
 
-    Uses ``__slots__`` for memory efficiency since many optimization passes
+    Uses ``slots=True`` for memory efficiency since many optimization passes
     increment these counters thousands of times on large files.
     """
 
-    __slots__ = (
-        "num_elements_removed",
-        "num_attributes_removed",
-        "num_style_properties_fixed",
-        "num_bytes_saved_in_colors",
-        "num_ids_removed",
-        "num_comments_removed",
-        "num_rasters_embedded",
-        "num_path_segments_removed",
-        "num_points_removed_from_polygon",
-        "num_bytes_saved_in_path_data",
-        "num_bytes_saved_in_comments",
-        "num_bytes_saved_in_ids",
-        "num_bytes_saved_in_lengths",
-        "num_bytes_saved_in_transforms",
-    )
-
-    # -- Element & attribute removal counters --
-    num_elements_removed: int
+    num_elements_removed: int = 0
     """SVG elements removed entirely."""
-    num_attributes_removed: int
-    """Individual attributes stripped from elements."""
-    num_ids_removed: int
-    """``id`` attributes removed because unreferenced."""
 
-    # -- Style & color counters --
-    num_style_properties_fixed: int
+    num_attributes_removed: int = 0
+    """Individual attributes stripped from elements."""
+
+    num_style_properties_fixed: int = 0
     """CSS style properties repaired or inlined."""
-    num_bytes_saved_in_colors: int
+
+    num_bytes_saved_in_colors: int = 0
     """Bytes saved by shortening color values."""
 
-    # -- Path & geometry counters --
-    num_path_segments_removed: int
-    """Path segments eliminated."""
-    num_points_removed_from_polygon: int
-    """Polygon points eliminated (e.g. collinear)."""
-    num_bytes_saved_in_path_data: int
-    """Bytes saved by rewriting path data more compactly."""
+    num_ids_removed: int = 0
+    """``id`` attributes removed because unreferenced."""
 
-    # -- Length & transform counters --
-    num_bytes_saved_in_lengths: int
-    """Bytes saved by shortening length values."""
-    num_bytes_saved_in_transforms: int
-    """Bytes saved by simplifying transform strings."""
-
-    # -- Other counters --
-    num_comments_removed: int
+    num_comments_removed: int = 0
     """XML comments removed."""
-    num_bytes_saved_in_comments: int
-    """Bytes saved by removing XML comments."""
-    num_rasters_embedded: int
+
+    num_rasters_embedded: int = 0
     """Raster images base64-encoded and embedded inline."""
 
-    # NOTE: num_bytes_saved_in_ids is tracked in __slots__ but was a legacy
-    # field — it is kept for API compatibility.
-    num_bytes_saved_in_ids: int
+    num_path_segments_removed: int = 0
+    """Path segments eliminated."""
+
+    num_points_removed_from_polygon: int = 0
+    """Polygon points eliminated (e.g. collinear)."""
+
+    num_bytes_saved_in_path_data: int = 0
+    """Bytes saved by rewriting path data more compactly."""
+
+    num_bytes_saved_in_comments: int = 0
+    """Bytes saved by removing XML comments."""
+
+    num_bytes_saved_in_ids: int = 0
     """Bytes saved by shortening or removing id values."""
 
-    def __init__(self) -> None:
-        """Initialise every counter to ``0`` via :meth:`reset`.
+    num_bytes_saved_in_lengths: int = 0
+    """Bytes saved by shortening length values."""
 
-        ``__slots__`` is enumerated dynamically, so newly added counters do
-        not require updating this constructor.
+    num_bytes_saved_in_transforms: int = 0
+    """Bytes saved by simplifying transform strings."""
+
+    @property
+    def total_bytes_saved(self) -> int:
+        """Sum of every ``num_bytes_saved_in_*`` counter.
+
+        Useful for a single headline number when reporting; individual
+        counters remain available for granular breakdowns.
         """
-        self.reset()
+        return (
+            self.num_bytes_saved_in_colors
+            + self.num_bytes_saved_in_path_data
+            + self.num_bytes_saved_in_comments
+            + self.num_bytes_saved_in_ids
+            + self.num_bytes_saved_in_lengths
+            + self.num_bytes_saved_in_transforms
+        )
 
     def reset(self) -> None:
         """Reset all statistics counters to zero.
 
-        Iterates over :attr:`__slots__` so that adding a new slot
+        Iterates over the dataclass fields so adding a new counter
         automatically includes it here — no need to update this method.
         """
-        for attr in self.__slots__:
-            setattr(self, attr, 0)
+        for field in fields(self):
+            setattr(self, field.name, 0)

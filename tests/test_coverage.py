@@ -15,15 +15,15 @@ import pytest
 
 from svg_polish.optimizer import (
     Unit,
-    findReferencedElements,
-    generateDefaultOptions,
+    find_referenced_elements,
+    generate_default_options,
     make_well_formed,
     maybe_gziped_file,
     parse_args,
-    removeDuplicateGradients,
-    sanitizeOptions,
-    scourString,
-    scourXmlFile,
+    remove_duplicate_gradients,
+    sanitize_options,
+    scour_string,
+    scour_xml_file,
 )
 from svg_polish.stats import ScourStats
 
@@ -33,18 +33,18 @@ from svg_polish.stats import ScourStats
 
 
 def _scour(svg: str, extra_args: list[str] | None = None) -> str:
-    """Run scourString with parse_args defaults plus any extra CLI flags."""
+    """Run scour_string with parse_args defaults plus any extra CLI flags."""
     args = extra_args or []
     options = parse_args(args)
-    return scourString(svg, options)
+    return scour_string(svg, options)
 
 
 def _scour_with_stats(svg: str, extra_args: list[str] | None = None) -> tuple[str, ScourStats]:
-    """Run scourString and also return the ScourStats object."""
+    """Run scour_string and also return the ScourStats object."""
     args = extra_args or []
     options = parse_args(args)
     stats = ScourStats()
-    result = scourString(svg, options, stats)
+    result = scour_string(svg, options, stats)
     return result, stats
 
 
@@ -76,7 +76,7 @@ class TestUnitHandling:
 
 
 # ---------------------------------------------------------------------------
-# removeUnusedDefs first call (line 619)
+# remove_unused_defs first call (line 619)
 # ---------------------------------------------------------------------------
 
 
@@ -160,7 +160,7 @@ class TestRenameIDsStyleUrl:
 
 
 # ---------------------------------------------------------------------------
-# moveCommonAttributesToParentGroup with animation elements (line 1118)
+# move_common_attributes_to_parent_group with animation elements (line 1118)
 # ---------------------------------------------------------------------------
 
 
@@ -304,7 +304,7 @@ class TestDedupGradients:
         assert "stop" in result
 
     def test_dedup_with_explicit_referenced_ids(self):
-        """removeDuplicateGradients accepts a pre-built referencedIDs map."""
+        """remove_duplicate_gradients accepts a pre-built referencedIDs map."""
         import xml.dom.minidom
 
         svg = (
@@ -319,9 +319,9 @@ class TestDedupGradients:
         doc = xml.dom.minidom.parseString(svg)
         root = doc.documentElement
         assert root is not None
-        refs = findReferencedElements(root)
+        refs = find_referenced_elements(root)
         # Pass the pre-built map to exercise the else branch that reuses it.
-        removed = removeDuplicateGradients(doc, referencedIDs=refs)
+        removed = remove_duplicate_gradients(doc, referencedIDs=refs)
         assert removed >= 1
 
     def test_three_duplicate_gradients(self):
@@ -443,7 +443,7 @@ class TestOverflowRemoval:
 
 
 # ---------------------------------------------------------------------------
-# styleInheritedByChild (lines 1961-1963, 1997)
+# style_inherited_by_child (lines 1961-1963, 1997)
 # ---------------------------------------------------------------------------
 
 
@@ -472,7 +472,7 @@ class TestStyleInheritedByChild:
 
 
 # ---------------------------------------------------------------------------
-# mayContainTextNodes with non-SVG namespace (line 2058) and <g> (line 2067)
+# may_contain_text_nodes with non-SVG namespace (line 2058) and <g> (line 2067)
 # ---------------------------------------------------------------------------
 
 
@@ -497,7 +497,7 @@ class TestMayContainTextNodes:
 
 
 # ---------------------------------------------------------------------------
-# removeDefaultAttributeValue for per-element attrs (lines 2402, 2507-2508)
+# remove_default_attribute_value for per-element attrs (lines 2402, 2507-2508)
 # ---------------------------------------------------------------------------
 
 
@@ -641,7 +641,7 @@ class TestCollapseSameCommands:
 
 
 # ---------------------------------------------------------------------------
-# parseListOfPoints edge cases (lines 3063, 3071-3072)
+# parse_list_of_points edge cases (lines 3063, 3071-3072)
 # ---------------------------------------------------------------------------
 
 
@@ -1021,21 +1021,21 @@ class TestParseArgsErrors:
 
 
 # ---------------------------------------------------------------------------
-# generateDefaultOptions (line 4522) and maybe_gziped_file (lines 4537-4539)
+# generate_default_options (line 4522) and maybe_gziped_file (lines 4537-4539)
 # ---------------------------------------------------------------------------
 
 
 class TestGenerateDefaultOptionsAndGzip:
-    """Test generateDefaultOptions and maybe_gziped_file."""
+    """Test generate_default_options and maybe_gziped_file."""
 
     def test_generate_default_options(self):
-        options = generateDefaultOptions()
+        options = generate_default_options()
         assert hasattr(options, "digits")
         assert hasattr(options, "indent_type")
         assert hasattr(options, "shorten_ids")
 
     def test_sanitize_options_none(self):
-        options = sanitizeOptions()
+        options = sanitize_options()
         assert hasattr(options, "digits")
 
     def test_maybe_gziped_file_svgz(self):
@@ -1146,8 +1146,8 @@ class TestAdditionalEdgeCases:
             tmp.write('<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100"/></svg>')
         try:
             options = parse_args([])
-            doc = scourXmlFile(tmp_path, options)
-            # scourXmlFile returns an xml.dom.minidom Document
+            doc = scour_xml_file(tmp_path, options)
+            # scour_xml_file returns an xml.dom.minidom Document
             assert doc.documentElement.nodeName == "svg"
             assert doc.documentElement.getElementsByTagName("rect")
         finally:
@@ -1198,7 +1198,7 @@ class TestAdditionalEdgeCases:
         svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100"/></svg>'
         options = parse_args(["-v"])
         stats = ScourStats()
-        scourString(svg, options, stats)
+        scour_string(svg, options, stats)
         # Just verify it doesn't crash
 
     def test_replace_url_refs_helper(self):

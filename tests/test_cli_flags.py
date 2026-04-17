@@ -6,7 +6,7 @@ expected changes in the optimized SVG output.
 
 from __future__ import annotations
 
-from svg_polish.optimizer import parse_args, scourString
+from svg_polish.optimizer import parse_args, scour_string
 
 # ---------------------------------------------------------------------------
 # --strip-xml-prolog
@@ -20,14 +20,14 @@ class TestStripXmlProlog:
         """With --strip-xml-prolog, the XML prolog is removed."""
         svg = '<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg"></svg>'
         options = parse_args(["--strip-xml-prolog"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "<?xml" not in result
 
     def test_default_keeps_xml_prolog(self) -> None:
         """Without --strip-xml-prolog, the XML prolog is preserved."""
         svg = '<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg"></svg>'
         options = parse_args([])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "<?xml" in result
 
 
@@ -48,7 +48,7 @@ class TestNoLineBreaks:
             "</svg>"
         )
         options = parse_args(["--no-line-breaks"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         # The XML prolog and trailing newline are always present.
         # The key behavior: the SVG body (between <svg> and </svg>)
         # should have no newlines — everything on one line.
@@ -80,7 +80,7 @@ class TestShortenIds:
             "</svg>"
         )
         options = parse_args(["--shorten-ids"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         # The long ID should not appear anymore
         assert "myVeryLongGradientName" not in result
         # But the reference should still be valid (shortened ID present)
@@ -104,7 +104,7 @@ class TestKeepEditorData:
             "</svg>"
         )
         options = parse_args(["--keep-editor-data"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "sodipodi" in result
 
     def test_default_strips_editor_data(self) -> None:
@@ -116,7 +116,7 @@ class TestKeepEditorData:
             "</svg>"
         )
         options = parse_args([])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "sodipodi" not in result
 
 
@@ -137,7 +137,7 @@ class TestEnableViewboxing:
             "</svg>"
         )
         options = parse_args(["--enable-viewboxing"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "viewBox" in result
         # The viewBox should reflect the width/height
         assert "0 0 100 200" in result
@@ -155,7 +155,7 @@ class TestIdStripping:
         """With --enable-id-stripping, unreferenced IDs are removed."""
         svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect id="unused" width="100" height="100"/></svg>'
         options = parse_args(["--enable-id-stripping"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert 'id="unused"' not in result
 
     def test_referenced_id_kept(self) -> None:
@@ -171,7 +171,7 @@ class TestIdStripping:
             "</svg>"
         )
         options = parse_args(["--enable-id-stripping"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "used" in result
 
 
@@ -187,7 +187,7 @@ class TestRemoveTitles:
         """With --remove-titles, <title> elements are stripped."""
         svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><title>My SVG</title><rect width='100' height='100'/></svg>"
         options = parse_args(["--remove-titles"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "<title>" not in result
         assert "My SVG" not in result
 
@@ -195,7 +195,7 @@ class TestRemoveTitles:
         """Without --remove-titles, <title> elements are preserved."""
         svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><title>My SVG</title><rect width='100' height='100'/></svg>"
         options = parse_args([])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "My SVG" in result
 
 
@@ -213,7 +213,7 @@ class TestRemoveDescriptions:
             "<svg xmlns=\"http://www.w3.org/2000/svg\"><desc>A description</desc><rect width='100' height='100'/></svg>"
         )
         options = parse_args(["--remove-descriptions"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "<desc>" not in result
         assert "A description" not in result
 
@@ -235,7 +235,7 @@ class TestRemoveMetadata:
             "</svg>"
         )
         options = parse_args(["--remove-metadata"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "<metadata>" not in result
 
 
@@ -251,7 +251,7 @@ class TestCommentStripping:
         """With --enable-comment-stripping, comments are removed."""
         svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><!-- a comment --><rect width='100' height='100'/></svg>"
         options = parse_args(["--enable-comment-stripping"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "<!--" not in result
         assert "a comment" not in result
 
@@ -268,7 +268,7 @@ class TestDisableSimplifyColors:
         """With --disable-simplify-colors, #ff0000 stays as #ff0000."""
         svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="#ff0000" width="100" height="100"/></svg>'
         options = parse_args(["--disable-simplify-colors"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         # With color simplification disabled, the full hex should remain
         assert "#ff0000" in result or "#f00" not in result
 
@@ -294,7 +294,7 @@ class TestKeepUnreferencedDefs:
             "</svg>"
         )
         options = parse_args(["--keep-unreferenced-defs"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "linearGradient" in result
 
 
@@ -316,7 +316,7 @@ class TestCreateGroups:
             "</svg>"
         )
         options = parse_args(["--create-groups"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         # The option should not crash — group creation depends on
         # element similarity heuristics.
         assert "<svg" in result
@@ -344,7 +344,7 @@ class TestProtectIds:
             "</svg>"
         )
         options = parse_args(["--enable-id-stripping", "--protect-ids-list=unused"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         # "unused" is protected, so it should still appear
         assert "unused" in result
 
@@ -370,6 +370,6 @@ class TestShortenIdsPrefix:
             "</svg>"
         )
         options = parse_args(["--shorten-ids", "--shorten-ids-prefix=x"])
-        result = scourString(svg, options)
+        result = scour_string(svg, options)
         assert "longName" not in result
         assert "url(#" in result

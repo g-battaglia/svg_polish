@@ -91,7 +91,37 @@ import re
 from collections.abc import Callable
 from decimal import Decimal, getcontext
 from functools import partial
-from typing import Any, Generator
+from typing import Any, Generator, cast
+
+from svg_polish.types import _precision
+
+
+def _make_number(text: str) -> Decimal:
+    """Parse *text* into a numeric value sized for the current engine.
+
+    Default engine (``"decimal"``) returns a normalised :class:`~decimal.Decimal`.
+    Opt-in engine (``"float"``) returns a native :class:`float` for ~3-5x
+    faster path arithmetic on large SVGs, at the cost of byte-exact
+    reproducibility (lossy). The return is annotated as ``Decimal`` because
+    the downstream pipeline accepts both via duck typing on ``+``, ``-``, ``*``,
+    ``/``, ``**``, ``abs``, and comparisons; the rare Decimal-only call sites
+    convert inputs explicitly.
+    """
+    if _precision.engine == "float":
+        return cast(Decimal, float(text))
+    return Decimal(text) * 1
+
+
+def _make_coordinate(text: str) -> Decimal:
+    """Parse *text* into a coordinate value sized for the current engine.
+
+    Decimal mode uses the active context (``getcontext().create_decimal``) so
+    the input string is bound by the default 28-digit precision before any
+    optimisation pass touches it; float mode returns a native :class:`float`.
+    """
+    if _precision.engine == "float":
+        return cast(Decimal, float(text))
+    return getcontext().create_decimal(text)
 
 
 class _EOF:
@@ -354,8 +384,8 @@ class SVGPathParser:
         while token[0] in self.number_tokens:
             # rx — x-radius (must be >= 0)
             assert token[1] is not None
-            rx = Decimal(token[1]) * 1
-            if rx < Decimal("0.0"):
+            rx = _make_number(token[1])
+            if rx < 0:
                 raise SyntaxError("expecting a nonnegative number; got %r" % (token,))
 
             # ry — y-radius (must be >= 0)
@@ -363,8 +393,8 @@ class SVGPathParser:
             if token[0] not in self.number_tokens:
                 raise SyntaxError("expecting a number; got %r" % (token,))
             assert token[1] is not None
-            ry = Decimal(token[1]) * 1
-            if ry < Decimal("0.0"):
+            ry = _make_number(token[1])
+            if ry < 0:
                 raise SyntaxError("expecting a nonnegative number; got %r" % (token,))
 
             # x-axis-rotation (decimal degrees)
@@ -372,7 +402,7 @@ class SVGPathParser:
             if token[0] not in self.number_tokens:
                 raise SyntaxError("expecting a number; got %r" % (token,))
             assert token[1] is not None
-            axis_rotation = Decimal(token[1]) * 1
+            axis_rotation = _make_number(token[1])
 
             # large-arc-flag (0 or 1).
             # SVG allows flag values to be concatenated without whitespace/delimiter,
@@ -381,7 +411,7 @@ class SVGPathParser:
             assert token[1] is not None
             if token[1][0] not in ("0", "1"):
                 raise SyntaxError("expecting a boolean flag; got %r" % (token,))
-            large_arc_flag = Decimal(token[1][0]) * 1
+            large_arc_flag = _make_number(token[1][0])
 
             if len(token[1]) > 1:
                 # Multi-char token: consume only the first character as the flag,
@@ -394,7 +424,7 @@ class SVGPathParser:
             assert token[1] is not None
             if token[1][0] not in ("0", "1"):
                 raise SyntaxError("expecting a boolean flag; got %r" % (token,))
-            sweep_flag = Decimal(token[1][0]) * 1
+            sweep_flag = _make_number(token[1][0])
 
             if len(token[1]) > 1:
                 token = (token[0], token[1][1:])
@@ -405,13 +435,13 @@ class SVGPathParser:
             if token[0] not in self.number_tokens:
                 raise SyntaxError("expecting a number; got %r" % (token,))
             assert token[1] is not None
-            x = Decimal(token[1]) * 1
+            x = _make_number(token[1])
 
             token = next_val_fn()
             if token[0] not in self.number_tokens:
                 raise SyntaxError("expecting a number; got %r" % (token,))
             assert token[1] is not None
-            y = Decimal(token[1]) * 1
+            y = _make_number(token[1])
 
             token = next_val_fn()
             arguments.extend([rx, ry, axis_rotation, large_arc_flag, sweep_flag, x, y])
@@ -422,9 +452,9 @@ class SVGPathParser:
         """Consume a single numeric value from the token stream."""
         if token[0] not in self.number_tokens:
             raise SyntaxError("expecting a number; got %r" % (token,))
-        # create_decimal() respects the current decimal context for precision.
+        # _make_coordinate switches between Decimal and float per the active engine.
         assert token[1] is not None
-        x = getcontext().create_decimal(token[1])
+        x = _make_coordinate(token[1])
         token = next_val_fn()
         return x, token
 
@@ -433,12 +463,12 @@ class SVGPathParser:
         if token[0] not in self.number_tokens:
             raise SyntaxError("expecting a number; got %r" % (token,))
         assert token[1] is not None
-        x = getcontext().create_decimal(token[1])
+        x = _make_coordinate(token[1])
         token = next_val_fn()
         if token[0] not in self.number_tokens:
             raise SyntaxError("expecting a number; got %r" % (token,))
         assert token[1] is not None
-        y = getcontext().create_decimal(token[1])
+        y = _make_coordinate(token[1])
         token = next_val_fn()
         return [x, y], token
 

@@ -27,6 +27,7 @@ If files have a `.svgz` extension, gzip-compressed SVG is assumed.
 |--------|-------------|---------|
 | `--set-precision=NUM` | Number of significant digits for coordinates | 5 |
 | `--set-c-precision=NUM` | Significant digits for control points | same as `--set-precision` |
+| `--decimal-engine=ENGINE` | Numeric engine: `decimal` (lossless) or `float` (~3-5× faster, lossy) | `decimal` |
 | `--disable-simplify-colors` | Don't convert colors to short `#RGB` format | colors simplified |
 | `--disable-style-to-xml` | Don't convert inline styles to XML attributes | styles converted |
 | `--disable-group-collapsing` | Don't collapse redundant `<g>` elements | groups collapsed |
