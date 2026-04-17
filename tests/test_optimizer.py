@@ -13,14 +13,12 @@ import sys
 import unittest
 from pathlib import Path
 
+from svg_polish.cli import parse_args, run, start
 from svg_polish.optimizer import (
     generate_default_options,
     make_well_formed,
-    parse_args,
     scour_string,
     scour_xml_file,
-    start,
-    run,
     XML_ENTS_ESCAPE_APOS,
     XML_ENTS_ESCAPE_QUOT,
 )

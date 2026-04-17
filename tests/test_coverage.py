@@ -13,13 +13,12 @@ import tempfile
 
 import pytest
 
+from svg_polish.cli import maybe_gziped_file, parse_args
 from svg_polish.optimizer import (
     Unit,
     find_referenced_elements,
     generate_default_options,
     make_well_formed,
-    maybe_gziped_file,
-    parse_args,
     remove_duplicate_gradients,
     sanitize_options,
     scour_string,

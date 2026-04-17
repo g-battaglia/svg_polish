@@ -182,7 +182,7 @@ class TestSerializeXMLIndentation:
 
     def test_default_indent_space(self) -> None:
         """Default indentation uses a single space character per level."""
-        from svg_polish.optimizer import parse_args
+        from svg_polish.cli import parse_args
 
         result = scour_string(self.SVG, parse_args([]))
         # Default indent_type is "space"; the inner <rect> sits one level in.
@@ -190,7 +190,7 @@ class TestSerializeXMLIndentation:
 
     def test_indent_tab(self) -> None:
         """--indent=tab uses tab characters."""
-        from svg_polish.optimizer import parse_args
+        from svg_polish.cli import parse_args
 
         result = scour_string(self.SVG, parse_args(["--indent=tab"]))
         # The inner <rect> sits one level in (the empty <g> is collapsed).
@@ -198,7 +198,7 @@ class TestSerializeXMLIndentation:
 
     def test_indent_none(self) -> None:
         """--indent=none disables indentation entirely."""
-        from svg_polish.optimizer import parse_args
+        from svg_polish.cli import parse_args
 
         result = scour_string(self.SVG, parse_args(["--indent=none"]))
         # No leading whitespace before nested elements
@@ -208,7 +208,7 @@ class TestSerializeXMLIndentation:
 
     def test_no_line_breaks_single_line(self) -> None:
         """--no-line-breaks collapses the SVG body into a single line."""
-        from svg_polish.optimizer import parse_args
+        from svg_polish.cli import parse_args
 
         result = scour_string(self.SVG, parse_args(["--no-line-breaks"]))
         body_start = result.find("<svg")

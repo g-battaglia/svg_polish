@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from svg_polish.optimizer import parse_args, scour_string
+from svg_polish.cli import parse_args
+from svg_polish.optimizer import scour_string
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

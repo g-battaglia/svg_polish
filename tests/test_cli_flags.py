@@ -6,7 +6,8 @@ expected changes in the optimized SVG output.
 
 from __future__ import annotations
 
-from svg_polish.optimizer import parse_args, scour_string
+from svg_polish.cli import parse_args
+from svg_polish.optimizer import scour_string
 
 # ---------------------------------------------------------------------------
 # --strip-xml-prolog

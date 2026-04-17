@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import xml.dom.minidom
 
+from svg_polish.cli import parse_args
 from svg_polish.optimizer import (
     dedup_gradient,
     find_elements_with_id,
     find_referenced_elements,
     may_contain_text_nodes,
-    parse_args,
     remove_unused_defs,
     rename_id,
     scour_string,
