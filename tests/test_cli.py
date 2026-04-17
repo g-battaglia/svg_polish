@@ -254,3 +254,60 @@ class TestStartAndRun:
         monkeypatch.setattr(sys, "argv", ["svg-polish", str(infile), str(outfile)])
         run()
         assert b"<svg" in outfile.read_bytes()
+
+
+class TestInstalledEntryPoint:
+    """Regression guard against ``pyproject.toml:[project.scripts]`` drift.
+
+    The in-process tests above import ``run`` directly, so they pass even
+    when the project.scripts entry point points at a non-existent or
+    renamed symbol. Those two paths ran out of sync once already
+    (``svg_polish.optimizer:run`` → ``svg_polish.cli:run``); the checks in
+    this class close that gap by exercising the wrapper script the way
+    the shell does after ``pip install``.
+    """
+
+    def test_console_script_entry_point_resolves(self) -> None:
+        """The entry-point string must load a callable.
+
+        ``ep.load()`` performs the same ``import + getattr`` that the
+        generated wrapper script runs at startup — if
+        ``svg_polish.cli:run`` ever moves again, this test fails with the
+        same ``ImportError`` the user would see on ``svg-polish --help``.
+        """
+        import importlib.metadata
+
+        eps = importlib.metadata.entry_points(group="console_scripts")
+        polish = [ep for ep in eps if ep.name == "svg-polish"]
+        assert polish, "'svg-polish' console script not registered"
+        assert len(polish) == 1
+        (ep,) = polish
+        assert ep.value == "svg_polish.cli:run", f"unexpected entry point: {ep.value}"
+        loaded = ep.load()
+        assert callable(loaded)
+
+    def test_installed_binary_help_succeeds(self) -> None:
+        """Invoking the wrapper binary on ``--help`` must exit 0.
+
+        Belt-and-braces test: even if ``entry_points()`` above resolves,
+        the wrapper shebang / Python-launcher contract on some platforms
+        can still fail. This spawns a real process.
+        """
+        import shutil
+        import subprocess
+
+        binary = shutil.which("svg-polish")
+        if binary is None:
+            binary_path = pathlib.Path(sys.executable).parent / "svg-polish"
+            if not binary_path.exists():
+                pytest.skip("svg-polish not installed in this interpreter's bin dir")
+            binary = str(binary_path)
+
+        result = subprocess.run(
+            [binary, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0, f"--help exited {result.returncode}\nstderr:\n{result.stderr}"
+        assert "svg-polish" in result.stdout.lower()

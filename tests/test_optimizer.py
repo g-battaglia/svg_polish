@@ -681,7 +681,6 @@ class KeepInkscapeNamespaceDeclarationsWhenKeepEditorData(unittest.TestCase):
         self.assertEqual(
             True, FoundNamespace, "Did not find Inkscape namespace declaration when using --keep-editor-data"
         )
-        return False
 
 
 class KeepSodipodiNamespaceDeclarationsWhenKeepEditorData(unittest.TestCase):
@@ -697,7 +696,6 @@ class KeepSodipodiNamespaceDeclarationsWhenKeepEditorData(unittest.TestCase):
         self.assertEqual(
             True, FoundNamespace, "Did not find Sodipodi namespace declaration when using --keep-editor-data"
         )
-        return False
 
 
 class KeepReferencedFonts(unittest.TestCase):
