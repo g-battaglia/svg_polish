@@ -98,5 +98,11 @@ since August 2021. This release rebuilds the public surface, hardens
 the security posture, modularises the monolithic `scour.py`, and
 introduces a typed configuration / result API.
 
+Output is **byte-exact identical** to Scour 0.38.2 on 148/148 input
+fixtures in the test suite (the 149th, `doctype.svg`, is rejected by
+the new secure-by-default XML parser — opt-out via
+`OptimizeOptions(allow_xml_entities=True)`). Reproduce locally with
+`scripts/check_scour_baseline.py`.
+
 `svg_regex.py` is derived from code by Enthought, Inc. (BSD 3-Clause).
 Full attribution in [`NOTICE`](NOTICE).

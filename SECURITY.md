@@ -51,6 +51,11 @@ native code, so it adds no measurable overhead on the hot path.
 Inputs containing `<!ENTITY ...>` definitions, external references, or
 DOCTYPE-with-entities are rejected with :class:`svg_polish.SvgSecurityError`.
 
+This is the **only** intentional behavioural divergence from upstream Scour
+0.38.2. With this opt-out enabled the optimizer is byte-exact identical to
+Scour 0.38.2 on every other fixture in the test suite (148/148 inputs verified
+via `scripts/check_scour_baseline.py`).
+
 To opt out (e.g. for trusted internal pipelines that must preserve a custom
 DOCTYPE), pass `allow_xml_entities=True`. A `SecurityWarning` is emitted on
 every call so the choice is visible in logs.
