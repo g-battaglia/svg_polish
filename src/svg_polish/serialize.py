@@ -110,20 +110,14 @@ def attributes_ordered_for_output(element: Element) -> list[Attr]:
     """Return *element*'s attributes sorted in canonical SVG output order.
 
     Empty attribute lists short-circuit so the hot path on attribute-less
-    elements avoids the ``NamedNodeMap.item`` round-trip. The .item(i) call
-    is painfully slow (bpo#40689), so we materialise the items once and
-    then sort the Python list.
+    elements avoids materialising an attribute list. Read the map once and
+    sort by the same canonical key; repeated item(i) calls copy its values.
     """
     if not element.hasAttributes():
         return []
-    attribute = element.attributes
-    # ``attribute.values()`` would be faster but is marked experimental in
-    # the standard library, so we stick with .item(i) and pay the cost once.
-    items = [attribute.item(i) for i in range(attribute.length)]
-    # minidom's NamedNodeMap.item returns Node | None; in practice only Attr
-    # nodes are stored on element.attributes. Filter Nones and cast for mypy.
-    attrs: list[Attr] = [a for a in items if a is not None]  # type: ignore[misc]
-    return sorted(attrs, key=_attribute_sort_key_function)
+    # NamedNodeMap.item(i) rebuilds the values list for every index in minidom.
+    # Read it once; canonical sorting still determines the exact output order.
+    return sorted(element.attributes.values(), key=_attribute_sort_key_function)
 
 
 def serialize_xml(

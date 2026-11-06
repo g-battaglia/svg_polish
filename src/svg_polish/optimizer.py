@@ -388,7 +388,15 @@ def _scour_string_pipeline(in_string: str | bytes, options: optparse.Values, sta
     ``_precision.ctx`` and ``_precision.ctx_c`` are read by the optimization
     passes and are not initialised here.
     """
-    doc = _parse_xml(in_string, options)
+    # minidom owns parent/child and attribute cycles. Release this per-call
+    # tree deterministically, including when an optimization pass raises,
+    # rather than retaining whole documents until a cyclic GC collection.
+    with _parse_xml(in_string, options) as doc:
+        return _optimize_document(doc, options, stats)
+
+
+def _optimize_document(doc: Document, options: optparse.Values, stats: ScourStats) -> str:
+    """Optimize and serialize a document whose caller owns its lifetime."""
     # parseString always produces a documentElement; bind to a local for clarity
     # and to give mypy a non-Optional handle for the rest of the pipeline.
     root = doc.documentElement

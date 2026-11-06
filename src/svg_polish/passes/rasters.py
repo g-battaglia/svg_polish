@@ -33,6 +33,7 @@ import sys
 from xml.dom.minidom import Element
 
 from svg_polish.constants import NS
+from svg_polish.dom import _set_xlink_href
 
 __all__ = ["embed_rasters"]
 
@@ -129,7 +130,7 @@ def embed_rasters(element: Element, options: optparse.Values) -> int:
                     if ext == "jpg":
                         ext = "jpeg"
 
-                    element.setAttributeNS(NS["XLINK"], "href", "data:image/" + ext + ";base64," + b64eRaster.decode())
+                    _set_xlink_href(element, "data:image/" + ext + ";base64," + b64eRaster.decode())
                     num_rasters_embedded += 1
                     del b64eRaster
     return num_rasters_embedded

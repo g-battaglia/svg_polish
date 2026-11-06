@@ -1,6 +1,6 @@
 [project]
 name = "svg-polish"
-version = "1.0.0"
+version = "1.0.1"
 description = "A fast, lossless SVG optimizer that removes unnecessary data and produces clean, lightweight vector graphics."
 readme = "README.md"
 license = "Apache-2.0"

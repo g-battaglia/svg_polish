@@ -71,7 +71,7 @@ from svg_polish.exceptions import (
 from svg_polish.options import OptimizeOptions
 from svg_polish.stats import ScourStats
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __all__ = [
     # Primary API.
     "optimize",

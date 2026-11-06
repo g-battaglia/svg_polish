@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1]
+
+- Release each optimization's XML document on success and failure instead of
+  waiting for cyclic garbage collection.
+- Keep qualified-name and namespace attribute indexes consistent when rewriting
+  xlink references, allowing deterministic DOM cleanup without changing output.
+- Avoid repeated attribute-map copies during serialization and exception-heavy
+  missing-attribute lookups during reference scans. Existing golden output is
+  preserved; no additional response or document cache is introduced.
+
 ## [1.0.0] — Initial release
 
 First public release of `svg_polish` — a fast, lossless, type-safe SVG
