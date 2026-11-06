@@ -18,7 +18,7 @@ class TestVersion:
         assert isinstance(__version__, str)
 
     def test_version_is_1_0_0(self):
-        assert __version__ == "1.0.0"
+        assert __version__ == "1.0.1"
 
 
 class TestOptimize:

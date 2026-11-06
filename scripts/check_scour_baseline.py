@@ -39,7 +39,7 @@ except ImportError:
         "  uv pip install --target /tmp/scour-baseline scour==0.38.2\n"
         "  PYTHONPATH=/tmp/scour-baseline uv run python scripts/check_scour_baseline.py\n"
     )
-    raise SystemExit(2)
+    raise SystemExit(2) from None
 
 from svg_polish import optimize as polish_optimize
 from svg_polish.exceptions import SvgSecurityError

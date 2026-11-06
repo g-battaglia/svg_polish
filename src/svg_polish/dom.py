@@ -57,6 +57,19 @@ def find_elements_with_id(node: Element, elems: IdentifiedElements | None = None
     return elems
 
 
+def _set_xlink_href(node: Element, value: str) -> None:
+    """Update the historical href spelling without corrupting minidom's map.
+
+    setAttributeNS changes an existing attribute's prefix/name in place but
+    leaves its old qualified-name dictionary key behind. Replacing that
+    attribute updates both indexes and permits Document.unlink cleanup.
+    """
+    attribute = node.getAttributeNodeNS(NS["XLINK"], "href")
+    if attribute is not None and attribute.name != "href":
+        node.removeAttributeNode(attribute)
+    node.setAttributeNS(NS["XLINK"], "href", value)
+
+
 def find_referenced_elements(node: Element, ids: ReferencedIDs | None = None) -> ReferencedIDs:
     """Return a mapping of ``{id: {referencing_nodes}}`` for every referenced ID.
 
@@ -100,7 +113,8 @@ def find_referenced_elements(node: Element, ids: ReferencedIDs | None = None) ->
             ids[ref_id] = {node}
 
     # Inline style="…" declarations.
-    styles = node.getAttribute("style").split(";")
+    style_attribute = node.getAttributeNode("style")
+    styles = style_attribute.value.split(";") if style_attribute is not None else ()
     for style in styles:
         propval = style.split(":")
         if len(propval) == 2:
@@ -110,7 +124,10 @@ def find_referenced_elements(node: Element, ids: ReferencedIDs | None = None) ->
 
     # Direct attributes (fill, stroke, filter, marker, …).
     for attr in referencingProps:
-        val = node.getAttribute(attr).strip()
+        attribute = node.getAttributeNode(attr)
+        if attribute is None:
+            continue
+        val = attribute.value.strip()
         if not val:
             continue
         find_referencing_property(node, attr, val, ids)

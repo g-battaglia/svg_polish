@@ -27,7 +27,7 @@ from xml.dom import Node
 from xml.dom.minidom import Document, Element
 
 from svg_polish.constants import NS, referencingProps
-from svg_polish.dom import _build_url_ref_regex, find_elements_with_id, find_referenced_elements
+from svg_polish.dom import _build_url_ref_regex, _set_xlink_href, find_elements_with_id, find_referenced_elements
 from svg_polish.stats import ScourStats
 from svg_polish.style import _invalidate_style_cache
 from svg_polish.types import IdentifiedElements, ReferencedIDs
@@ -318,7 +318,7 @@ def rename_id(
             # xlink:href="#idFrom" → xlink:href="#idTo".
             href = node.getAttributeNS(NS["XLINK"], "href")
             if href == "#" + idFrom:
-                node.setAttributeNS(NS["XLINK"], "href", "#" + idTo)
+                _set_xlink_href(node, "#" + idTo)
                 num_bytes_saved += len(idFrom) - len(idTo)
 
             # Inline style="…": rewrite via the cached regex.

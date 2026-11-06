@@ -36,7 +36,7 @@ from xml.dom import Node
 from xml.dom.minidom import Document, Element
 
 from svg_polish.constants import NS
-from svg_polish.dom import find_elements_with_id, find_referenced_elements
+from svg_polish.dom import _set_xlink_href, find_elements_with_id, find_referenced_elements
 from svg_polish.stats import ScourStats
 from svg_polish.style import _get_style, _set_style
 from svg_polish.types import IdentifiedElements, ReferencedIDs, SVGLength, Unit
@@ -196,7 +196,7 @@ def collapse_singly_referenced_gradients(
                         # elem itself pointed somewhere — refElem now
                         # has to point at that target to preserve the
                         # original paint chain.
-                        refElem.setAttributeNS(NS["XLINK"], "href", target_href)
+                        _set_xlink_href(refElem, target_href)
                     else:
                         # elem was a leaf in the chain; refElem no
                         # longer needs an xlink:href at all.
@@ -361,7 +361,7 @@ def dedup_gradient(
                     if n > 0:
                         elem.setAttribute(attr, v_new)
                 if elem.getAttributeNS(NS["XLINK"], "href") == "#" + dup_id:
-                    elem.setAttributeNS(NS["XLINK"], "href", "#" + master_id)
+                    _set_xlink_href(elem, "#" + master_id)
                 styles = _get_style(elem)
                 for style in styles:
                     v = styles[style]
